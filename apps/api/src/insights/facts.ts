@@ -120,6 +120,17 @@ const hourLabel = (h: number) => {
   return `${hh % 12 === 0 ? 12 : hh % 12} ${suffix}`;
 };
 
+/** Per-campaign counts for the current and previous period: the only input the fact rules need. */
+export type CampaignCounts = {
+  id: string;
+  name: string;
+  source: Source;
+  cur: StatusCounts;
+  prev: StatusCounts;
+};
+/** Current-period resolved and missed calls by local hour of day (0..23). */
+export type HourCounts = { h: number; missed: number; resolved: number };
+
 export async function computeFacts(
   db: Db,
   accountId: string,
@@ -151,7 +162,29 @@ export async function computeFacts(
       previous.knownAtUtc,
     ],
   );
+  const byCampaign = new Map<string, CampaignCounts>();
+  for (const r of rows) {
+    const c = byCampaign.get(r.id) ?? { id: r.id, name: r.name, source: r.source, cur: zero(), prev: zero() };
+    add(c[r.period], {
+      ringing: r.ringing,
+      connected: r.connected,
+      missed: r.missed,
+      converted: r.converted,
+    });
+    byCampaign.set(r.id, c);
+  }
 
+  const hours = await db.query<HourCounts>(
+    `SELECT extract(hour FROM s.bucket_start AT TIME ZONE $4)::int AS h,
+            sum(s.missed) AS missed, sum(s.connected + s.missed + s.converted) AS resolved
+     FROM call_stats_hourly s WHERE s.account_id = $1 AND s.bucket_start >= $2 AND s.bucket_start < $3 GROUP BY 1`,
+    [accountId, range.fromUtc, range.toUtc, range.timezone],
+  );
+  return factsFromCounts([...byCampaign.values()], hours.rows);
+}
+
+/** The fact rules, pure: counts in, facts out. Production and the eval fixtures both go through here. */
+export function factsFromCounts(campaignCounts: CampaignCounts[], hours: HourCounts[]): Fact[] {
   const account: Group = {
     key: "all",
     label: "All campaigns",
@@ -159,27 +192,22 @@ export async function computeFacts(
     cur: zero(),
     prev: zero(),
   };
-  const sources = new Map<string, Group>();
-  const campaigns = new Map<string, Group>();
-  for (const r of rows) {
-    const counts = { ringing: r.ringing, connected: r.connected, missed: r.missed, converted: r.converted };
-    const s = sources.get(r.source) ?? {
-      key: r.source,
-      label: SOURCE_LABELS[r.source],
+  const sources = new Map<string, Group & { campaigns: number }>();
+  for (const c of campaignCounts) {
+    const s = sources.get(c.source) ?? {
+      key: c.source,
+      label: SOURCE_LABELS[c.source],
       dimension: "source" as const,
       cur: zero(),
       prev: zero(),
+      campaigns: 0,
     };
-    const c = campaigns.get(r.id) ?? {
-      key: r.id,
-      label: r.name,
-      dimension: "campaign" as const,
-      cur: zero(),
-      prev: zero(),
-    };
-    for (const g of [account, s, c]) add(g[r.period], counts);
-    sources.set(r.source, s);
-    campaigns.set(r.id, c);
+    s.campaigns++;
+    for (const g of [account, s]) {
+      add(g.cur, c.cur);
+      add(g.prev, c.prev);
+    }
+    sources.set(c.source, s);
   }
 
   const answered = account.cur.connected + account.cur.converted;
@@ -195,26 +223,19 @@ export async function computeFacts(
   for (const g of sources.values()) {
     facts.push(countFact(g, "calls", value), countFact(g, "missed", value), rateFact(g));
   }
-  // A campaign that is its source's only campaign would repeat the source's facts word for word.
-  const perSource = new Map<string, number>();
-  for (const r of rows) if (r.period === "cur") perSource.set(r.source, (perSource.get(r.source) ?? 0) + 1);
-  const sourceOf = new Map(rows.map((r) => [r.id, r.source]));
-  for (const g of campaigns.values()) {
-    if ((perSource.get(sourceOf.get(g.key)!) ?? 0) > 1)
-      facts.push(countFact(g, "missed", value), rateFact(g));
+  for (const c of campaignCounts) {
+    // A campaign that is its source's only campaign would repeat the source's facts word for word.
+    if ((sources.get(c.source)?.campaigns ?? 0) < 2) continue;
+    const g: Group = { key: c.id, label: c.name, dimension: "campaign", cur: c.cur, prev: c.prev };
+    facts.push(countFact(g, "missed", value), rateFact(g));
   }
 
   // When do missed calls cluster? The local 2-hour window with the most EXCESS missed calls (missed beyond what
   // the overall miss rate predicts): a high rate on a handful of 3 am calls matters less than a busy evening.
-  const hours = await db.query<{ h: number; missed: number; resolved: number }>(
-    `SELECT extract(hour FROM s.bucket_start AT TIME ZONE $4)::int AS h,
-            sum(s.missed) AS missed, sum(s.connected + s.missed + s.converted) AS resolved
-     FROM call_stats_hourly s WHERE s.account_id = $1 AND s.bucket_start >= $2 AND s.bucket_start < $3 GROUP BY 1`,
-    [accountId, range.fromUtc, range.toUtc, range.timezone],
-  );
-  const byHour = new Map(hours.rows.map((r) => [r.h, r]));
+  const byHour = new Map(hours.map((r) => [r.h, r]));
   const overall = resolvedCalls(account.cur) ? account.cur.missed / resolvedCalls(account.cur) : 0;
-  let best: { h: number; missed: number; resolved: number } | null = null;
+  const excess = (x: HourCounts) => x.missed - overall * x.resolved;
+  let best: HourCounts | null = null;
   for (let h = 0; h < 24; h++) {
     const a = byHour.get(h);
     const b = byHour.get((h + 1) % 24);
@@ -223,7 +244,6 @@ export async function computeFacts(
       missed: (a?.missed ?? 0) + (b?.missed ?? 0),
       resolved: (a?.resolved ?? 0) + (b?.resolved ?? 0),
     };
-    const excess = (x: typeof w) => x.missed - overall * x.resolved;
     if (w.resolved >= LOW_VOLUME_THRESHOLD && (!best || excess(w) > excess(best))) best = w;
   }
   if (best && overall > 0) {
@@ -238,8 +258,8 @@ export async function computeFacts(
       previous: overall,
       changePct: rate - overall,
       volume: best.missed,
-      notable: best.missed - overall * best.resolved >= LOW_VOLUME_THRESHOLD && rate >= overall * 1.3,
-      impact: (best.missed - overall * best.resolved) * value.perAnswered,
+      notable: excess(best) >= LOW_VOLUME_THRESHOLD && rate >= overall * 1.3,
+      impact: excess(best) * value.perAnswered,
       display: [windowLabel, fmtPct(rate), fmtPct(overall), fmtInt(best.missed)],
       detail: "share of resolved calls that were missed, in this local 2-hour window vs all hours",
     });

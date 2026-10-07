@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
-    "build": "esbuild src/server.ts src/simulator/cli.ts src/db/migrate-cli.ts --bundle --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:fastify --external:'@fastify/*' --external:fastify-type-provider-zod --external:zod --external:pg --external:prom-client && cp -r migrations dist/ && cp -r src/insights/prompts dist/",
+    "build": "esbuild server=src/server.ts simulate=src/simulator/cli.ts migrate=src/db/migrate-cli.ts eval=src/insights/eval/run.ts --bundle --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:fastify --external:'@fastify/*' --external:fastify-type-provider-zod --external:zod --external:pg --external:prom-client --external:pino && rm -rf dist/migrations dist/prompts && cp -r migrations dist/ && cp -r src/insights/prompts dist/",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
