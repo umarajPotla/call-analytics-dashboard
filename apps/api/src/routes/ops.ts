@@ -1,3 +1,4 @@
+import { AppMeta } from "@calls/shared";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/pool";
@@ -42,5 +43,19 @@ export const devRoutes: FastifyPluginAsyncZod<{ spike: (accountId: string) => vo
       spike(req.body.accountId);
       return reply.status(202).send({ ok: true });
     },
+  );
+};
+
+export const metaRoutes: FastifyPluginAsyncZod<{ meta: AppMeta }> = async (app, { meta }) => {
+  app.get(
+    "/meta",
+    {
+      schema: {
+        tags: ["accounts"],
+        summary: "Deployment features the UI adapts to",
+        response: { 200: AppMeta },
+      },
+    },
+    async () => meta,
   );
 };

@@ -13,6 +13,7 @@ const Env = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   NODE_ENV: z.string().default("development"),
   WEB_DIST: z.string().optional(),
+  GRAFANA_URL: z.string().optional(),
   SIM_ENABLED: bool,
   SIM_SEED: z.coerce.number().int().default(42),
   SIM_BACKFILL_DAYS: z.coerce.number().int().min(1).max(30).default(14),

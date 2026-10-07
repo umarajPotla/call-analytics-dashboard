@@ -24,12 +24,12 @@ import { MetricsRepo } from "./read/metricsRepo";
 import type { SseHub } from "./realtime/sseHub";
 import { ingestRoutes } from "./routes/ingest";
 import { insightsRoutes } from "./routes/insights";
-import { devRoutes, opsRoutes } from "./routes/ops";
+import { devRoutes, metaRoutes, opsRoutes } from "./routes/ops";
 import { readRoutes } from "./routes/read";
 import { streamRoutes } from "./routes/stream";
 
 export type AppDeps = {
-  config: Pick<Config, "LOG_LEVEL" | "DEV_TOOLS" | "WEB_DIST">;
+  config: Pick<Config, "LOG_LEVEL" | "DEV_TOOLS" | "WEB_DIST"> & Partial<Pick<Config, "GRAFANA_URL">>;
   db: Db;
   campaigns: CampaignDirectory;
   ingest: IngestService;
@@ -89,6 +89,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       });
       await api.register(streamRoutes, { accounts, calls: callsRepo, hub: deps.hub });
       await api.register(ingestRoutes, { ingest: deps.ingest });
+      await api.register(metaRoutes, {
+        meta: {
+          version: process.env.npm_package_version ?? "1.0.0",
+          devTools: Boolean(deps.config.DEV_TOOLS && deps.spike),
+          ai: { enabled: Boolean(deps.insights?.model), model: deps.insights?.model ?? null },
+          grafanaUrl: deps.config.GRAFANA_URL ?? null,
+        },
+      });
       if (deps.insights)
         await api.register(insightsRoutes, { db: deps.db, accounts, insights: deps.insights });
       if (deps.config.DEV_TOOLS && deps.spike) await api.register(devRoutes, { spike: deps.spike });
@@ -101,7 +109,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   if (webDist && existsSync(join(webDist, "index.html"))) {
     await app.register(fastifyStatic, { root: webDist, wildcard: false });
     app.get("/*", async (req, reply) => {
-      if (req.url.startsWith("/api/")) return reply.callNotFound();
+      // Only page routes get the SPA shell. A missing asset is a 404, not index.html served as JavaScript.
+      if (req.url.startsWith("/api/") || /\.[a-z0-9]+(?:\?|$)/i.test(req.url)) return reply.callNotFound();
       return reply.sendFile("index.html");
     });
   }

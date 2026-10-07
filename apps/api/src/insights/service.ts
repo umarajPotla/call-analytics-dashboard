@@ -44,6 +44,11 @@ export class InsightsService {
     this.now = opts.now ?? Date.now;
   }
 
+  /** The model behind the insights, or null when only the template is available. */
+  get model(): string | null {
+    return this.generator.model;
+  }
+
   get(accountId: string, range: ResolvedRange): Promise<InsightsResponse> {
     const scope = [accountId, range.from, range.to, PROMPT_VERSION, this.generator.model ?? "template"].join(
       "|",

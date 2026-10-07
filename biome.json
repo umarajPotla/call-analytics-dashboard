@@ -7,17 +7,33 @@
       "!**/node_modules",
       "!**/coverage",
       "!ops/grafana/dashboards/*.json",
-      "!evals/**/recordings/*.json"
+      "!**/evals/recordings/*.json",
+      "!**/evals/results/*.json"
     ]
   },
-  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 110
+  },
   "linter": {
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "style": { "noNonNullAssertion": "off" },
-      "suspicious": { "noExplicitAny": "error" }
+      "style": {
+        "noNonNullAssertion": "off",
+        "noDescendingSpecificity": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "error"
+      }
     }
   },
-  "javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } }
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always"
+    }
+  }
 }

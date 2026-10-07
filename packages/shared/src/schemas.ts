@@ -185,3 +185,12 @@ export const InsightsResponse = z.object({
   generatedAt: z.string(),
 });
 export type InsightsResponse = z.infer<typeof InsightsResponse>;
+
+/** What the UI needs to know about this deployment. */
+export const AppMeta = z.object({
+  version: z.string(),
+  devTools: z.boolean(),
+  ai: z.object({ enabled: z.boolean(), model: z.string().nullable() }),
+  grafanaUrl: z.string().nullable(),
+});
+export type AppMeta = z.infer<typeof AppMeta>;
