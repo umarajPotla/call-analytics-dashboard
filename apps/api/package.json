@@ -1,0 +1,37 @@
+{
+  "name": "@calls/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "build": "esbuild src/server.ts src/simulator/cli.ts src/db/migrate-cli.ts --bundle --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:fastify --external:'@fastify/*' --external:fastify-type-provider-zod --external:zod --external:pg --external:prom-client && cp -r migrations dist/ && cp -r src/insights/prompts dist/",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "typecheck": "tsc --noEmit -p .",
+    "db:migrate": "tsx src/db/migrate-cli.ts",
+    "simulate": "tsx src/simulator/cli.ts",
+    "eval": "tsx src/insights/eval/run.ts",
+    "bench": "tsx scripts/bench.ts"
+  },
+  "dependencies": {
+    "@calls/shared": "workspace:*",
+    "@fastify/static": "10.1.5",
+    "@fastify/swagger": "9.9.1",
+    "@fastify/swagger-ui": "6.1.1",
+    "fastify": "5.12.5",
+    "fastify-type-provider-zod": "7.0.0",
+    "pg": "8.23.1",
+    "prom-client": "15.1.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "@types/pg": "8.23.1",
+    "esbuild": "0.28.2",
+    "fast-check": "4.10.2",
+    "tsx": "4.23.15",
+    "vitest": "5.0.3"
+  }
+}
