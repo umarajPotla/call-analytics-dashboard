@@ -137,7 +137,8 @@ export const SummaryResponse = z.object({
   conversionRate: Kpi,
   missedCalls: Kpi,
   inProgress: z.number(),
-  previousRange: z.object({ from: z.string(), to: z.string() }),
+  /** The comparison period. `asOf` is where it was cut: the same local time as now if the range includes today. */
+  previousRange: z.object({ from: z.string(), to: z.string(), asOf: z.string() }),
   ignoredFilters: z.array(z.string()),
 });
 export type SummaryResponse = z.infer<typeof SummaryResponse>;
