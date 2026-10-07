@@ -1,0 +1,25 @@
+{
+  "name": "call-analytics-dashboard",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @calls/api start",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "db:migrate": "pnpm --filter @calls/api db:migrate",
+    "eval": "pnpm --filter @calls/api eval",
+    "bench": "pnpm --filter @calls/api bench"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "typescript": "7.0.2"
+  }
+}
