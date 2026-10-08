@@ -1,0 +1,454 @@
+{
+  "model": "llama3.2:3b",
+  "promptVersion": "insights.v2",
+  "runs": 3,
+  "summary": {
+    "cases": 21,
+    "modelCalls": 18,
+    "llmAnswered": 16,
+    "firstTryValid": 13,
+    "repaired": 3,
+    "fallbacks": 2,
+    "coverage": 1,
+    "forbiddenCitations": 0,
+    "directionErrors": 0,
+    "noSignalFailures": 0,
+    "latencyP50Ms": 2746,
+    "latencyP95Ms": 16231,
+    "tokensPerCase": 789
+  },
+  "scores": [
+    {
+      "case": "conversion-drop",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 10879.489255,
+      "tokens": {
+        "input": 1443,
+        "output": 184
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 12.3, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 5.9, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "conversion-drop",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2830.2792929999996,
+      "tokens": {
+        "input": 643,
+        "output": 107
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "conversion-drop",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2746.4190430000017,
+      "tokens": {
+        "input": 643,
+        "output": 102
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1961.8066259999978,
+      "tokens": {
+        "input": 591,
+        "output": 50
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1390.7940839999974,
+      "tokens": {
+        "input": 591,
+        "output": 48
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1346.2654589999984,
+      "tokens": {
+        "input": 591,
+        "output": 50
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1931.2588340000002,
+      "tokens": {
+        "input": 464,
+        "output": 63
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1716.0689590000002,
+      "tokens": {
+        "input": 464,
+        "output": 65
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1811.8869589999995,
+      "tokens": {
+        "input": 464,
+        "output": 69
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "source:meta:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 5558.639003,
+      "tokens": {
+        "input": 1309,
+        "output": 178
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 4.6, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 5.8, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 5.6, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "source:meta:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2774.529542999997,
+      "tokens": {
+        "input": 560,
+        "output": 95
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "invalid",
+      "kind": "template",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "source:meta:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 3,
+      "latencyMs": 16230.822298,
+      "tokens": {
+        "input": 1269,
+        "output": 196
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 4.6, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 5.8, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 5.6, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2190.7351259999996,
+      "tokens": {
+        "input": 462,
+        "output": 67
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 1898.060666999998,
+      "tokens": {
+        "input": 462,
+        "output": 68
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2092.2992509999967,
+      "tokens": {
+        "input": 462,
+        "output": 74
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "many-signals",
+      "outcome": "invalid",
+      "kind": "template",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 3,
+      "latencyMs": 6400.173085999995,
+      "tokens": {
+        "input": 1758,
+        "output": 174
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 7.6, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "many-signals",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 4726.5606270000135,
+      "tokens": {
+        "input": 1775,
+        "output": 151
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 3.6, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 7.6, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 3.6, which is not in the facts it cites",
+        "wrong_direction: insight 1 only describes decreases, but Conversion rate · Organic search went up"
+      ]
+    },
+    {
+      "case": "many-signals",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate",
+        "campaign:c-brand:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2752.118877000001,
+      "tokens": {
+        "input": 792,
+        "output": 93
+      },
+      "guardrailErrors": []
+    }
+  ]
+}

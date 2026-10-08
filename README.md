@@ -49,39 +49,24 @@ Open **http://localhost:8080**. On first start the simulator loads 14 days of hi
 
 ## Decision summary
 
-*Also pasted into the submission form. Detail and the full reasoning are in [DESIGN.md](docs/DESIGN.md).*
+*The same text goes in the submission form. The full reasoning, assumptions and change log are in [DESIGN.md](docs/DESIGN.md).*
 
-**The problem as I framed it.** A marketing manager at one brand (A1) wants to know four things: are calls coming in now, which channels produce calls that convert, how volume trends this week, and how many calls are missed. There was no kickoff call, so I wrote the open questions down as explicit assumptions (DESIGN §3). The main ones:
-- **Converted** means the brand's business outcome (sale, booking, quote). It is reported at call end or up to 72 h later, and credited to the call's start time and campaign.
-- **Conversion rate** = converted ÷ resolved calls. Resolved = connected + missed + converted, so calls still ringing don't drag the rate down.
-- **Last 7 days** means 7 calendar days in the account's time zone.
+**What I built.** A dashboard for a marketing manager at one brand: a live feed of calls as they ring, connect, are missed or convert; call volume for the last 7 days by hour and by day; conversion rate by campaign source; KPI tiles vs the previous period; filters for date range, campaign and outcome, kept in the URL; and an AI "What changed" panel with sources. A versioned REST API (OpenAPI at `/api/docs`) serves it, with the live feed as Server-Sent Events, and a simulator sends realistic traffic through the same ingest API a telephony system would use. It runs with `docker compose up`, which is also how CI starts and tests it. With no kickoff call, I wrote the open questions down as assumptions: *converted* is the brand's business outcome (like an Invoca signal), arriving up to 72 h after the call and credited to it; *conversion rate* is converted ÷ resolved calls; *last 7 days* means calendar days in the account's time zone.
 
-Each assumption says what changes if it's wrong, and most are a one-function change.
+**Key trade-offs**
+- **PostgreSQL only:** an event log, each call's current state and hourly rollups, updated in one transaction per event. Charts read rollups, roughly 50× faster than scanning calls at enterprise volume ([benchmark](docs/benchmarks.md)). The cost is a copy that could drift, covered by a property test, a drift alert and a repair tool. No Kafka, Redis or OLAP store without a measured need.
+- **Ingest is safe to retry and order-tolerant:** event ids make duplicates no-ops, and a state machine that only moves forward makes late events no-ops.
+- **Server-Sent Events over WebSockets:** updates only flow one way, and SSE reconnects and replays over plain HTTP. Charts refetch at most every 5 s rather than re-aggregating in the browser.
+- **Like-for-like comparisons:** this week so far vs last week up to the same moment, with conversions counted as known then. Without it, every week looked worse than the last.
+- **Grounded AI:** SQL computes every number; the model only chooses and phrases. Guardrails reject numbers not in the cited facts, wrong up/down claims and uncited channels, with a rules-based fallback. The direction check exists because a live eval of a small local model got every number right and the direction wrong.
+- **Simulator history is bulk-loaded** (like a data import) while live events go through the API, so a free host starts in seconds.
+- **TypeScript over Rails:** I'm not fluent in Ruby, and one language end to end lets the API contract be shared. Inside Invoca's codebase I'd follow its conventions.
 
-**Key decisions and trade-offs**
-1. **One PostgreSQL database holds three forms of the data:**
-   - an append-only event log
-   - the current state of each call
-   - hourly rollups, updated in the same transaction as each event
+**What I'd do differently with more time.** Settle the assumptions at a kickoff before building. Add real authentication with Postgres row-level security. Put a shared aggregate cache and pushed "stats changed" events in front of the dashboards (the first thing to break at 500 customers), then batch rollup updates in projection workers (ingest measured ~1.5k events/s on 2 vCPUs). Add tracing, ingest rate limits and an SSE load test. Grow the eval set, and send notable insights to marketers as alerts.
 
-   Charts read a few hundred rollup rows instead of scanning calls. The cost is a second copy that could drift. A property-based test, a continuous drift check with an alert, and a repair tool cover that. I chose no Kafka, no Redis and no OLAP store: at this scale each would add a moving part without a measured need. DESIGN §11 lists what breaks first at 500 customers and the order I'd fix it in.
-2. **Ingest is safe to retry and tolerates any arrival order.** Every event has an id, so a duplicate is a no-op. A rank-based state machine only moves a call forward, so out-of-order events are no-ops too. The simulator deliberately sends duplicates and reordered events to prove this live.
-3. **Live updates use Server-Sent Events fed by Postgres `LISTEN/NOTIFY`, not WebSockets.** Updates only flow one way (server to browser), and SSE gives automatic reconnect and replay over plain HTTP. Charts refetch at most once every 5 s rather than recomputing metrics in the browser, so there is one source of truth.
-4. **Comparisons are like for like,** in both the KPI tiles and the AI insights. "This week so far" is compared with last week up to the same local time, and last week's conversions are counted as they were known at that point. Running the first version showed why this matters: every week looked worse than the last, because today is partial and recent calls haven't collected their late conversions yet.
-5. **The AI feature is grounded and measurable.** SQL computes every number. The model only chooses and phrases the notable facts. Guardrails reject any number that isn't in the facts an insight cites, any up/down that contradicts them, and any channel named without being cited. A rules-based template takes over if the model fails or is unavailable.
-   - **Evidence, not hope:** a live eval of a small local model (llama3.2:3b) found answers with every number right and the direction wrong ("Meta calls up 34%" for a 34% drop). That is why the direction and mention checks exist. The recorded answers are replayed in CI, where the guardrails reject every one of them.
-   - **Noise control:** "notable" requires z ≥ 3, not 2. About 50 facts are tested per view, and at z ≥ 2 the first version reported pure noise.
-   - **Platform pieces:** a provider-agnostic gateway (timeouts, retry, circuit breaker, cost meter), versioned prompts, caching, a per-account budget, and an eval suite that runs in CI.
-6. **Operable from day one.** Prometheus metrics, four Grafana dashboards and six alert rules are provisioned from the repo, each alert with a runbook entry.
-7. **TypeScript end to end.** One language and shared Zod schemas from the database to the browser, with the OpenAPI spec generated from the same schemas. Inside Invoca's codebase I'd follow its conventions (Rails); for a greenfield build in two days I chose the stack I can explain line by line.
-8. **$0 to run.** Docker Compose locally. Render's free tier plus Neon's free Postgres for the hosted demo.
+**What I intentionally left out.** Authentication and SSO (stubbed; tenant scoping is real). Call recordings, transcripts and any claim about *why* something changed, which needs conversation data. Ad spend, ROI and multi-touch attribution. Kafka, Kubernetes and microservices. Free-form chat or text-to-SQL. A mobile-specific layout, and a hosted Grafana.
 
-**What I'd do next:**
-- real authentication with Postgres row-level security
-- a server-side aggregate cache and pushed "stats changed" events (the first scaling bottleneck)
-- tracing
-- rate limits on ingest
-- batching rollup deltas in projection workers once ingest nears its measured limit ([benchmark](docs/benchmarks.md))
+**Where I relied on AI.** I built this with an AI coding assistant (Claude) doing most of the typing. I made the product and scope decisions and the assumptions, and the most important corrections came from running the system and questioning its numbers (listed in the [change log](docs/DESIGN.md#15-change-log)). The parts I relied on it most for, and would want time with before extending on my own, are the SSE hub's replay and backpressure (`apps/api/src/realtime`), the chart components (`apps/web/src/components`) and the Grafana dashboard generator (`ops/grafana`).
 
 ## API
 

@@ -251,8 +251,12 @@ The gateway also owns **timeouts** (8 s hosted; 20 s by default for a local mode
 | Model · prompt | Model calls | First try OK | Repaired | Template fallback | Key findings covered | Latency p50 / p95 |
 |---|---|---|---|---|---|---|
 | llama3.2:3b (local, MacBook Air) · v1, number checks only | 18 | 13 | 3 | 2 | 98% | 4.0 s / 11.6 s |
+| llama3.2:3b (same machine) · v2, all five checks | 18 | 13 | 3 | 2 | 100% | 2.7 s / 16.2 s |
 
-Re-checked against today's guardrails, 14 of those 23 raw answers would still reach a user. All 9 rejections are real problems: wrong or lumped-together directions, channels named without being cited, a body over the length limit, an invented number. That is exactly the failure mode prompt v2 and the two new checks target.
+What changed between the two runs, from re-checking every raw answer against today's guardrails (`pnpm eval`):
+- **v1:** 14 of 23 raw answers would reach a user. The 9 rejections are all real problems, and 7 of them are wrong or lumped-together directions or channels named without being cited, which number checks alone had let through.
+- **v2:** 16 of 23 pass. Raw answers with a wrong direction fell from 5 to 1 and uncited channels from 3 to 0; with the guardrails, none reach a user. The main remaining failure is the model doing its own arithmetic (averaging two rates into a "4.6"), which the number check catches and the repair round or template handles.
+- **Not yet at the bar:** 2 of 18 answers still fall back to the template (11% vs the ≤10% gate), and p95 latency is 16 s on a laptop. Next steps: a larger hosted model through the same gateway, and a prompt rule against computing new numbers, each judged by the same eval.
 
 **Telemetry.**
 - Metrics: generations by outcome (`ok`, `repaired`, `invalid`, `timeout`, `error`, `circuit_open`, `rate_limited`, `no_llm`, `no_signal`), guardrail rejections by check, LLM latency, tokens, estimated cost from a price table ($0 on free tiers, but the mechanism exists), cache hits (fresh / content / miss), and feedback.
