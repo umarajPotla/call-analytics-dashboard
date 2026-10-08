@@ -30,5 +30,3 @@ export function mergeFeed(items: FeedItem[], incoming: FeedItem, outcomes: strin
   next.splice(at === -1 ? next.length : at, 0, incoming);
   return next.slice(0, max);
 }
-
-export const maxSeq = (items: FeedItem[]) => items.reduce((m, i) => Math.max(m, i.seq ?? 0), 0);

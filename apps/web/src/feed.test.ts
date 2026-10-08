@@ -52,4 +52,11 @@ describe("mergeFeed", () => {
     expect(mergeFeed(list, item("a", "converted", 3), ["connected"])).toEqual([]);
     expect(mergeFeed([], item("c", "converted", 4), ["converted"])).toHaveLength(1);
   });
+
+  it("applies updates that don't change the status, such as a call ending", () => {
+    const list = [item("a", "connected", 4)];
+    const ended = { ...item("a", "connected", 7), endedAt: "2026-10-07T10:04:00Z", durationSec: 240 };
+    expect(mergeFeed(list, ended, [])[0]).toMatchObject({ durationSec: 240, seq: 7 });
+    expect(mergeFeed([ended], item("a", "connected", 4), [])).toEqual([ended]); // and ignores the older one
+  });
 });
