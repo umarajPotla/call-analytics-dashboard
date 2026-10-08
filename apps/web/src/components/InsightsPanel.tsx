@@ -36,7 +36,7 @@ export function InsightsPanel({ accountId, data, isLoading, error, onRetry }: Pr
   return (
     <div>
       {data.insights.map((ins) => (
-        <article key={`${data.cacheKey}-${ins.id}`} className="insight">
+        <article key={`${data.generationId}-${ins.id}`} className="insight">
           <h3>{ins.title}</h3>
           <p>{ins.body}</p>
           {ins.action && <div className="action">{ins.action}</div>}
@@ -52,7 +52,7 @@ export function InsightsPanel({ accountId, data, isLoading, error, onRetry }: Pr
             </details>
           )}
           {ins.factIds.length > 0 && (
-            <Feedback accountId={accountId} cacheKey={data.cacheKey} insightId={ins.id} />
+            <Feedback accountId={accountId} generationId={data.generationId} insightId={ins.id} />
           )}
         </article>
       ))}
@@ -88,16 +88,16 @@ function describeFact(f: Fact): string {
 
 function Feedback({
   accountId,
-  cacheKey,
+  generationId,
   insightId,
 }: {
   accountId: string;
-  cacheKey: string;
+  generationId: string;
   insightId: string;
 }) {
   const [rating, setRating] = useState<1 | -1 | null>(null);
   const send = useMutation({
-    mutationFn: (r: 1 | -1) => api.feedback(accountId, { cacheKey, insightId, rating: r }),
+    mutationFn: (r: 1 | -1) => api.feedback(accountId, { generationId, insightId, rating: r }),
     onSuccess: (_, r) => setRating(r),
   });
   return (

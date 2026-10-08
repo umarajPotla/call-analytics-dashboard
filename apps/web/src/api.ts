@@ -76,7 +76,7 @@ export const api = {
     ),
   insights: (f: Pick<Filters, "accountId" | "from" | "to">) =>
     request<InsightsResponse>(`${acct(f)}/insights${qs({ from: f.from, to: f.to })}`),
-  feedback: (accountId: string, body: { cacheKey: string; insightId: string; rating: 1 | -1 }) =>
+  feedback: (accountId: string, body: { generationId: string; insightId: string; rating: 1 | -1 }) =>
     request<null>(`/accounts/${accountId}/insights/feedback`, { method: "POST", body: JSON.stringify(body) }),
   spike: (accountId: string) =>
     request<{ ok: boolean }>("/dev/spike", { method: "POST", body: JSON.stringify({ accountId }) }),

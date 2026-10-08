@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Fact, Insight, InsightsResponse } from "@calls/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Db } from "../db/pool";
@@ -63,8 +63,8 @@ export class InsightsService {
 
   private async load(accountId: string, range: ResolvedRange, scope: string): Promise<InsightsResponse> {
     const fresh = await this.db.query<{ payload: InsightsResponse }>(
-      `SELECT payload FROM insight_cache
-       WHERE account_id = $1 AND scope_key = $2 AND expires_at > now() ORDER BY created_at DESC LIMIT 1`,
+      `SELECT g.payload FROM insight_scopes s JOIN insight_generations g ON g.id = s.generation_id
+       WHERE s.account_id = $1 AND s.scope_key = $2 AND s.expires_at > now()`,
       [accountId, scope],
     );
     if (fresh.rows[0]) {
@@ -80,13 +80,14 @@ export class InsightsService {
       .slice(0, MAX_FACTS);
     const cacheKey = factsKey(facts, this.generator.model);
 
-    const same = await this.db.query<{ payload: InsightsResponse }>(
-      "SELECT payload FROM insight_cache WHERE account_id = $1 AND cache_key = $2 AND expires_at > now()",
+    const same = await this.db.query<{ id: string; payload: InsightsResponse; ttl: number }>(
+      `SELECT id, payload, extract(epoch FROM expires_at - now()) AS ttl FROM insight_generations
+       WHERE account_id = $1 AND cache_key = $2 AND expires_at > now() ORDER BY created_at DESC LIMIT 1`,
       [accountId, cacheKey],
     );
     if (same.rows[0]) {
       this.opts.metrics?.insightCache.inc({ result: "content" });
-      await this.store(accountId, cacheKey, scope, same.rows[0].payload, TTL_MS);
+      await this.point(accountId, scope, same.rows[0].id, Math.min(TTL_MS, same.rows[0].ttl * 1000));
       return same.rows[0].payload;
     }
     this.opts.metrics?.insightCache.inc({ result: "miss" });
@@ -106,16 +107,17 @@ export class InsightsService {
       insights: gen.insights,
       facts,
       generator: gen.generator,
+      generationId: randomUUID(),
       cacheKey,
       generatedAt: new Date(this.now()).toISOString(),
     };
-    await this.store(
-      accountId,
-      cacheKey,
-      scope,
-      response,
-      DEGRADED.includes(gen.outcome) ? DEGRADED_TTL_MS : TTL_MS,
+    const ttl = DEGRADED.includes(gen.outcome) ? DEGRADED_TTL_MS : TTL_MS;
+    await this.db.query(
+      `INSERT INTO insight_generations (id, account_id, cache_key, payload, expires_at)
+       VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))`,
+      [response.generationId, accountId, cacheKey, JSON.stringify(response), ttl / 1000],
     );
+    await this.point(accountId, scope, response.generationId, ttl);
     return response;
   }
 
@@ -131,45 +133,42 @@ export class InsightsService {
     return allowed;
   }
 
-  private async store(
-    accountId: string,
-    cacheKey: string,
-    scope: string,
-    payload: InsightsResponse,
-    ttlMs: number,
-  ) {
+  /** Make `generationId` the answer for this (account, range) for the next `ttlMs`. */
+  private async point(accountId: string, scope: string, generationId: string, ttlMs: number) {
     await this.db.query(
-      `INSERT INTO insight_cache (account_id, cache_key, scope_key, payload, created_at, expires_at)
-       VALUES ($1, $2, $3, $4, now(), now() + make_interval(secs => $5))
-       ON CONFLICT (account_id, cache_key) DO UPDATE
-         SET scope_key = EXCLUDED.scope_key, payload = EXCLUDED.payload,
-             created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at`,
-      [accountId, cacheKey, scope, JSON.stringify(payload), ttlMs / 1000],
+      `INSERT INTO insight_scopes (account_id, scope_key, generation_id, expires_at)
+       VALUES ($1, $2, $3, now() + make_interval(secs => $4))
+       ON CONFLICT (account_id, scope_key) DO UPDATE
+         SET generation_id = EXCLUDED.generation_id, expires_at = EXCLUDED.expires_at`,
+      [accountId, scope, generationId, Math.max(1, ttlMs / 1000)],
     );
   }
 
   /**
-   * Thumbs up/down. Stores the insight and the facts it cited exactly as the user saw them, with the prompt
-   * version and model, so a thumbs-down can be turned into an eval case.
+   * Thumbs up/down on one insight of one generation. Generations are immutable, so the stored snapshot (the
+   * insight and the facts it cited, the prompt version and the model) is exactly what the user saw, ready to
+   * become an eval case.
    */
   async feedback(
     accountId: string,
-    input: { cacheKey: string; insightId: string; rating: 1 | -1; comment?: string },
+    input: { generationId: string; insightId: string; rating: 1 | -1; comment?: string },
   ) {
-    const { rows } = await this.db.query<{ payload: InsightsResponse }>(
-      "SELECT payload FROM insight_cache WHERE account_id = $1 AND cache_key = $2",
-      [accountId, input.cacheKey],
+    const { rows } = await this.db.query<{ payload: InsightsResponse; cache_key: string }>(
+      "SELECT payload, cache_key FROM insight_generations WHERE account_id = $1 AND id = $2",
+      [accountId, input.generationId],
     );
     const payload = rows[0]?.payload;
     const insight: Insight | undefined = payload?.insights.find((i) => i.id === input.insightId);
     if (!payload || !insight) throw notFound("Insight");
     const cited = payload.facts.filter((f) => insight.factIds.includes(f.id));
     await this.db.query(
-      `INSERT INTO insight_feedback (account_id, cache_key, insight_id, rating, prompt_version, model, insight, facts, comment)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO insight_feedback
+         (account_id, generation_id, cache_key, insight_id, rating, prompt_version, model, insight, facts, comment)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         accountId,
-        input.cacheKey,
+        input.generationId,
+        rows[0]!.cache_key,
         input.insightId,
         input.rating,
         payload.generator.promptVersion,

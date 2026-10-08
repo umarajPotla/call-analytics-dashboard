@@ -6,9 +6,6 @@ export const CALL_STATUSES = ["ringing", "connected", "missed", "converted"] as 
 export const CallStatus = z.enum(CALL_STATUSES);
 export type CallStatus = z.infer<typeof CallStatus>;
 
-/** Outcomes a user can filter by. "ringing" is shown as "In progress". */
-export const Outcome = CallStatus;
-
 export const EVENT_TYPES = [
   "call.started",
   "call.answered",
@@ -143,7 +140,12 @@ export const SummaryResponse = z.object({
 });
 export type SummaryResponse = z.infer<typeof SummaryResponse>;
 
-export const CallsPage = z.object({ items: z.array(FeedItem), nextCursor: z.string().nullable() });
+export const CallsPage = z.object({
+  items: z.array(FeedItem),
+  nextCursor: z.string().nullable(),
+  /** The account's latest event sequence when this page was read: live updates resume after it. */
+  asOfSeq: z.number().int().optional(),
+});
 export type CallsPage = z.infer<typeof CallsPage>;
 
 export const Insight = z.object({
@@ -181,6 +183,8 @@ export const InsightsResponse = z.object({
     promptVersion: z.string(),
     fallbackReason: z.string().nullable(),
   }),
+  /** Immutable id of this generation; feedback refers to it. */
+  generationId: z.uuid(),
   cacheKey: z.string(),
   generatedAt: z.string(),
 });

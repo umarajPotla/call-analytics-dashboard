@@ -73,6 +73,7 @@ export async function prune(db: Db, opts: JobOptions): Promise<{ events: number;
     if ((r.rowCount ?? 0) < BATCH) break;
   }
   await db.query("DELETE FROM call_stats_hourly WHERE bucket_start < $1", [dataCutoff]);
-  await db.query("DELETE FROM insight_cache WHERE expires_at < now() - interval '1 day'");
+  // Feedback keeps its own snapshot, so expired generations can go (their scope rows cascade).
+  await db.query("DELETE FROM insight_generations WHERE expires_at < now() - interval '1 day'");
   return { events, calls };
 }

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CATALOG } from "../../src/catalog";
 import type { Db } from "../../src/db/pool";
 import { rebuildRollups } from "../../src/db/rollups";
+import { PROMPT_VERSION } from "../../src/insights/generator";
 import { bulkLoadHistory } from "../../src/simulator/backfill";
 import { type TestApp, testApp } from "../helpers/app";
 import { freshDb } from "../helpers/db";
@@ -225,7 +226,7 @@ describe("insights API", () => {
   it("returns grounded insights with their facts, caches them, and records feedback", async () => {
     const first = await get<InsightsResponse>(`${A}/insights?${WEEK}`);
     expect(first.status).toBe(200);
-    expect(first.body.generator).toMatchObject({ kind: "template", promptVersion: "insights.v1" });
+    expect(first.body.generator).toMatchObject({ kind: "template", promptVersion: PROMPT_VERSION });
     expect(first.body.insights.length).toBeGreaterThan(0);
     expect(first.body.insights.length).toBeLessThanOrEqual(3);
     const ids = new Set(first.body.facts.map((f) => f.id));
@@ -238,16 +239,28 @@ describe("insights API", () => {
     const fb = await t.app.inject({
       method: "POST",
       url: `${A}/insights/feedback`,
-      payload: { cacheKey: first.body.cacheKey, insightId: insight.id, rating: -1, comment: "not useful" },
+      payload: {
+        generationId: first.body.generationId,
+        insightId: insight.id,
+        rating: -1,
+        comment: "not useful",
+      },
     });
     expect(fb.statusCode).toBe(204);
-    const row = (await db.query("SELECT rating, prompt_version, insight FROM insight_feedback")).rows[0];
-    expect(row).toMatchObject({ rating: -1, prompt_version: "insights.v1", insight: { id: insight.id } });
+    const row = (
+      await db.query("SELECT rating, prompt_version, generation_id, insight FROM insight_feedback")
+    ).rows[0];
+    expect(row).toMatchObject({
+      rating: -1,
+      prompt_version: PROMPT_VERSION,
+      generation_id: first.body.generationId,
+      insight: { id: insight.id, title: insight.title },
+    });
 
     const unknown = await t.app.inject({
       method: "POST",
       url: `${A}/insights/feedback`,
-      payload: { cacheKey: "0123456789abcdef", insightId: "i1", rating: 1 },
+      payload: { generationId: "00000000-0000-4000-8000-000000000000", insightId: "i1", rating: 1 },
     });
     expect(unknown.statusCode).toBe(404);
   });

@@ -42,7 +42,7 @@ export const insightsRoutes: FastifyPluginAsyncZod<Deps> = async (app, { db, acc
         summary: "Thumbs up/down on one insight (feeds the eval set)",
         params: AccountParams,
         body: z.object({
-          cacheKey: z.string().min(8).max(64),
+          generationId: z.uuid(),
           insightId: z.string().min(1).max(8),
           rating: z.union([z.literal(1), z.literal(-1)]),
           comment: z.string().max(500).optional(),
