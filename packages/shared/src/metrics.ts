@@ -14,8 +14,8 @@ export type StatusCounts = {
 /** Below this many resolved calls a rate is flagged as low-volume in the UI and ignored by AI insights. */
 export const LOW_VOLUME_THRESHOLD = 30;
 
-/** Conversions can arrive up to 72 h after a call, so the most recent days' rates may still rise. */
-export const CONVERSION_MATURITY_DAYS = 3;
+/** Conversions can arrive up to this long after the call (A2); calls younger than this may still convert. */
+export const LATE_CONVERSION_HOURS = 72;
 
 export const emptyCounts = (): StatusCounts => ({ ringing: 0, connected: 0, missed: 0, converted: 0 });
 

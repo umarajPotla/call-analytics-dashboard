@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "../../src/db/pool";
 import { computeFacts } from "../../src/insights/facts";
+import { MetricsRepo } from "../../src/read/metricsRepo";
 import type { ResolvedRange } from "../../src/read/range";
 import { freshDb } from "../helpers/db";
 import { ACME } from "../helpers/events";
@@ -75,5 +76,16 @@ describe("insight facts compare like for like", () => {
     expect(rate.current).toBeCloseTo(0.3);
     expect(rate.previous).toBeCloseTo(0.3); // not 0.6
     expect(rate.notable).toBe(false);
+  });
+
+  it("KPI totals for the comparison period use the same as-of rules (summary tiles)", async () => {
+    // Reuses the calls inserted above: previous week, cut at the same point, conversions as known then.
+    const now = T0 + 2 * D;
+    const totals = await new MetricsRepo(db).totalsAsOf(
+      ACME.id,
+      range(T0 - 7 * D, now - 7 * D, now - 7 * D),
+      null,
+    );
+    expect(totals).toEqual({ ringing: 0, connected: 70, missed: 0, converted: 30 });
   });
 });

@@ -85,3 +85,16 @@ export async function previousRange(db: Db, range: ResolvedRange): Promise<Resol
   const prev = await resolveRange(db, range.timezone, r.f, r.t, range.days);
   return { ...prev, asOfUtc: r.as_of, knownAtUtc: r.known_at };
 }
+
+/**
+ * The local date from which calls may still gain late conversions: the date of (now - 72 h) in the account's
+ * zone. Charts mark rates from this date on as "may still update". Based on now, not on the range: a range that
+ * ended weeks ago is final.
+ */
+export async function lateConversionHorizon(db: Db, timezone: string, hours: number): Promise<string> {
+  const { rows } = await db.query<{ d: string }>(
+    "SELECT ((now() - make_interval(hours => $2)) AT TIME ZONE $1)::date::text AS d",
+    [timezone, hours],
+  );
+  return rows[0]!.d;
+}

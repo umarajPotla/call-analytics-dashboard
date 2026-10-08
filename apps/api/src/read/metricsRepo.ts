@@ -39,7 +39,9 @@ export class MetricsRepo {
   ): Promise<VolumePoint[]> {
     const { rows } = await this.db.query<CountsRow>(
       `SELECT to_char(g.h AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket, ${COUNTS}
-       FROM generate_series($2::timestamptz, $3::timestamptz - interval '1 hour', interval '1 hour') AS g(h)
+       -- Aligned to UTC hours, so zones with half-hour offsets still match rollup buckets (edges approximate, A9).
+       FROM generate_series(date_trunc('hour', $2::timestamptz, 'UTC'), $3::timestamptz - interval '1 second',
+                            interval '1 hour') AS g(h)
        LEFT JOIN call_stats_hourly s
          ON s.account_id = $1 AND s.bucket_start = g.h AND ($4::uuid[] IS NULL OR s.campaign_id = ANY($4))
        GROUP BY g.h ORDER BY g.h`,
@@ -66,14 +68,37 @@ export class MetricsRepo {
     return rows.map(toPoint);
   }
 
-  /** Totals up to the range's `asOf` (hour precision), so a partial current period compares fairly with the
-   * previous one cut at the same point. */
+  /** Totals for a range as things stand now, from the rollup. */
   async totals(accountId: string, range: ResolvedRange, campaignIds: string[] | null): Promise<StatusCounts> {
     const { rows } = await this.db.query<StatusCounts>(
       `SELECT ${COUNTS} FROM call_stats_hourly s
        WHERE s.account_id = $1 AND s.bucket_start >= $2 AND s.bucket_start < $3
          AND ($4::uuid[] IS NULL OR s.campaign_id = ANY($4))`,
-      [accountId, range.fromUtc, range.asOfUtc, campaignIds],
+      [accountId, range.fromUtc, range.toUtc, campaignIds],
+    );
+    return rows[0] ?? emptyCounts();
+  }
+
+  /**
+   * Totals for a COMPARISON range, as they looked at the equivalent moment: calls that started before `asOf`
+   * (to the microsecond, not the hour), with conversions counted only if known by `knownAt`. Reads `calls`, not
+   * the rollup, because the rollup only knows each call's status now. One account-week of calls: ~60 ms at
+   * enterprise volume (docs/benchmarks.md); at scale this moves behind the aggregate cache (DESIGN §11).
+   */
+  async totalsAsOf(
+    accountId: string,
+    range: ResolvedRange,
+    campaignIds: string[] | null,
+  ): Promise<StatusCounts> {
+    const { rows } = await this.db.query<StatusCounts>(
+      `SELECT count(*) FILTER (WHERE status = 'ringing') AS ringing,
+              count(*) FILTER (WHERE status = 'connected' OR (status = 'converted' AND converted_at > $4)) AS connected,
+              count(*) FILTER (WHERE status = 'missed') AS missed,
+              count(*) FILTER (WHERE status = 'converted' AND converted_at <= $4) AS converted
+       FROM calls
+       WHERE account_id = $1 AND started_at >= $2 AND started_at < $3
+         AND ($5::uuid[] IS NULL OR campaign_id = ANY($5))`,
+      [accountId, range.fromUtc, range.asOfUtc, range.knownAtUtc, campaignIds],
     );
     return rows[0] ?? emptyCounts();
   }

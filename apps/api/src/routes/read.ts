@@ -3,10 +3,10 @@ import {
   answerRate,
   CallsPage,
   CampaignRef,
-  CONVERSION_MATURITY_DAYS,
   ConversionResponse,
   conversionRate,
   Granularity,
+  LATE_CONVERSION_HOURS,
   SummaryResponse,
   totalCalls,
   VolumeResponse,
@@ -19,7 +19,7 @@ import { AccountParams, OutcomeFilter, RangeQuery } from "../http/params";
 import type { CampaignDirectory } from "../ingest/campaignDirectory";
 import type { CallsRepo } from "../read/callsRepo";
 import type { MetricsRepo } from "../read/metricsRepo";
-import { previousRange, resolveRange } from "../read/range";
+import { lateConversionHorizon, previousRange, resolveRange } from "../read/range";
 
 type Deps = {
   db: Db;
@@ -128,16 +128,13 @@ export const readRoutes: FastifyPluginAsyncZod<Deps> = async (
       const account = accounts.require(req.params.accountId);
       const range = await resolveRange(db, account.timezone, req.query.from, req.query.to, 366);
       const groups = await metrics.conversion(account.id, range, req.query.groupBy, req.query.campaignIds);
-      const mature = await db.query<{ d: string }>("SELECT ($1::date - $2::int + 1)::text AS d", [
-        range.to,
-        CONVERSION_MATURITY_DAYS,
-      ]);
+      const horizon = await lateConversionHorizon(db, account.timezone, LATE_CONVERSION_HOURS);
       reply.header("cache-control", CACHE);
       return {
         groupBy: req.query.groupBy,
         groups,
         ignoredFilters: req.query.outcomes ? ["outcomes"] : [],
-        maturity: { mayStillUpdateFrom: mature.rows[0]!.d },
+        maturity: { mayStillUpdateFrom: horizon },
       };
     },
   );
@@ -161,7 +158,7 @@ export const readRoutes: FastifyPluginAsyncZod<Deps> = async (
       const prev = await previousRange(db, range);
       const [cur, before] = await Promise.all([
         metrics.totals(account.id, range, req.query.campaignIds),
-        metrics.totals(account.id, prev, req.query.campaignIds),
+        metrics.totalsAsOf(account.id, prev, req.query.campaignIds),
       ]);
       reply.header("cache-control", CACHE);
       return {
