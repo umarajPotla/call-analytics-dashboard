@@ -30,6 +30,22 @@ Commands assume Docker Compose (`docker compose exec api …`). Without Docker, 
 2. Repair: `docker compose exec api node dist/rebuild-rollups.js --since <ISO time before the drift>`. It prints the drift before and after, which should be 0. Ingest keeps running; it waits a few seconds behind the rebuild's locks.
 3. Then find the cause: a manual SQL change, a restored backup, or a code path that writes `calls` without going through `IngestService`. Add a test that reproduces it. The property test in `test/integration/rollup.property.test.ts` is the place.
 
+## http-errors
+
+**Means:** more than 2% of API requests fail with a 5xx. Users see "Couldn't load this" panels.
+
+1. **Service health** dashboard → *Requests by route* and *Latency by route*: is it one route or all of them?
+2. `docker compose logs --tail 200 api | grep '"level":50'`: unhandled errors are logged with their stack; responses never include it.
+3. All routes failing usually means the database: check `/readyz` and the [api-down](#api-down) steps. One route failing after a deploy means a code regression: roll back.
+
+## live-feed-drops
+
+**Means:** more than 5% of live-feed disconnects are the server cutting off slow clients. Each client may have at most 500 unflushed writes; past that it is disconnected so it can't slow everyone else down. The browser reconnects by itself and replays what it missed, so users usually notice only a brief "Reconnecting…".
+
+1. **Service health** → *Live-feed connections*: a burst right after a traffic spike is expected; a steady rate is not.
+2. A steady rate means clients can't keep up: a slow network path, or a proxy buffering the stream. Check that proxies honour `X-Accel-Buffering: no`.
+3. If it persists at real scale, that's the signal for the dedicated realtime gateway (DESIGN §11, step 4).
+
 ## insights-fallback
 
 **Means:** more than 20% of AI insight generations fell back to the rules-based template. Users still see insights, but not the model's.

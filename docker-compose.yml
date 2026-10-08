@@ -10,7 +10,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: calls
-    ports: ["${DB_PORT:-5432}:5432"]
+    # Published on localhost only, and on 5433 so it never clashes with a Postgres already running on the host.
+    ports: ["127.0.0.1:${DB_PORT:-5433}:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/10-readonly.sql:ro
@@ -36,7 +37,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000} # a local model on a laptop is slower (and loads on first use); hosted uses 8 s
       GRAFANA_URL: ${GRAFANA_URL:-}
     ports: ["${PORT:-8080}:8080"]
     volumes:
