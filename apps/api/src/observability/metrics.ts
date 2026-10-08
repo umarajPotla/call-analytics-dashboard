@@ -1,5 +1,5 @@
 import type { IngestOutcome } from "@calls/shared";
-import client from "prom-client";
+import client from "@prometheus-io/client";
 import type { IngestObserver } from "../ingest/ingestService";
 import { estimateCostUsd, type GatewayObserver, type Pricing } from "../insights/gateway";
 import type { HubObserver } from "../realtime/sseHub";

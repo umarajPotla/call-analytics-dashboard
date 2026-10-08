@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
-    "build": "esbuild server=src/server.ts simulate=src/simulator/cli.ts migrate=src/db/migrate-cli.ts eval=src/insights/eval/run.ts --bundle --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:fastify --external:'@fastify/*' --external:fastify-type-provider-zod --external:zod --external:pg --external:prom-client --external:pino && rm -rf dist/migrations dist/prompts && cp -r migrations dist/ && cp -r src/insights/prompts dist/",
+    "build": "esbuild server=src/server.ts simulate=src/simulator/cli.ts migrate=src/db/migrate-cli.ts rebuild-rollups=src/db/rebuild-rollups-cli.ts eval=src/insights/eval/run.ts --bundle --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:fastify --external:'@fastify/*' --external:fastify-type-provider-zod --external:zod --external:pg --external:@prometheus-io/client --external:pino && rm -rf dist/migrations dist/prompts && cp -r migrations dist/ && cp -r src/insights/prompts dist/",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
@@ -13,18 +13,18 @@
     "db:migrate": "tsx src/db/migrate-cli.ts",
     "simulate": "tsx src/simulator/cli.ts",
     "eval": "tsx src/insights/eval/run.ts",
-    "bench": "tsx scripts/bench.ts"
+    "rebuild-rollups": "tsx --env-file-if-exists=../../.env src/db/rebuild-rollups-cli.ts"
   },
   "dependencies": {
     "@calls/shared": "workspace:*",
     "@fastify/static": "10.1.5",
     "@fastify/swagger": "9.9.1",
     "@fastify/swagger-ui": "6.1.1",
+    "@prometheus-io/client": "0.16.1",
     "fastify": "5.12.5",
     "fastify-type-provider-zod": "7.0.0",
     "pg": "8.23.1",
     "pino": "10.4.0",
-    "prom-client": "15.1.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
