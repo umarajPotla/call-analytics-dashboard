@@ -1,0 +1,447 @@
+{
+  "model": "llama3.2:3b",
+  "promptVersion": "insights.v1",
+  "runs": 3,
+  "summary": {
+    "cases": 21,
+    "modelCalls": 18,
+    "llmAnswered": 16,
+    "firstTryValid": 13,
+    "repaired": 3,
+    "fallbacks": 2,
+    "coverage": 0.9761904761904762,
+    "forbiddenCitations": 0,
+    "directionErrors": 1,
+    "noSignalFailures": 0,
+    "latencyP50Ms": 4032,
+    "latencyP95Ms": 11571,
+    "tokensPerCase": 639
+  },
+  "scores": [
+    {
+      "case": "conversion-drop",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 4031.610877,
+      "tokens": {
+        "input": 513,
+        "output": 114
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "conversion-drop",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 5410.553503,
+      "tokens": {
+        "input": 1195,
+        "output": 190
+      },
+      "guardrailErrors": [
+        "schema: insights.0.body: Too big: expected string to have <=240 characters"
+      ]
+    },
+    {
+      "case": "conversion-drop",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 6023.840212000001,
+      "tokens": {
+        "input": 1191,
+        "output": 189
+      },
+      "guardrailErrors": [
+        "schema: insights.0.body: Too big: expected string to have <=240 characters"
+      ]
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 4200.412252,
+      "tokens": {
+        "input": 461,
+        "output": 125
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 3461.4138349999994,
+      "tokens": {
+        "input": 461,
+        "output": 125
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "tv-volume-spike",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:tv:calls"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 6421.993377999999,
+      "tokens": {
+        "input": 461,
+        "output": 217
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "quiet-week",
+      "outcome": "no_signal",
+      "kind": "template",
+      "cited": [],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2502.1876260000026,
+      "tokens": {
+        "input": 347,
+        "output": 75
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2669.5054599999967,
+      "tokens": {
+        "input": 347,
+        "output": 88
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "low-volume-noise",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:meta:calls",
+        "source:meta:missed"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2352.540209999999,
+      "tokens": {
+        "input": 347,
+        "output": 79
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate"
+      ],
+      "coverage": 0.5,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2745.7975850000003,
+      "tokens": {
+        "input": 439,
+        "output": 75
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "source:meta:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 3311.2617519999985,
+      "tokens": {
+        "input": 439,
+        "output": 107
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "mixed-directions",
+      "outcome": "repaired",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "source:meta:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 4264.845211,
+      "tokens": {
+        "input": 1028,
+        "output": 139
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 4.6, which is not in the facts it cites",
+        "ungrounded_number: insight 1 uses the number 14.4, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "invalid",
+      "kind": "template",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 11571.062005000007,
+      "tokens": {
+        "input": 818,
+        "output": 174
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 2, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "invalid",
+      "kind": "template",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 10384.575670999991,
+      "tokens": {
+        "input": 814,
+        "output": 166
+      },
+      "guardrailErrors": [
+        "ungrounded_number: insight 1 uses the number 2, which is not in the facts it cites"
+      ]
+    },
+    {
+      "case": "evening-misses",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "account:all:missed_peak_window"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2258.5923760000005,
+      "tokens": {
+        "input": 344,
+        "output": 83
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "many-signals",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "campaign:c-brand:conversion_rate",
+        "source:organic:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2975.0154600000096,
+      "tokens": {
+        "input": 651,
+        "output": 67
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "many-signals",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "source:google_ads:conversion_rate",
+        "account:all:conversion_rate",
+        "source:organic:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 0,
+      "noSignalOk": true,
+      "insights": 1,
+      "latencyMs": 2296.48808499999,
+      "tokens": {
+        "input": 651,
+        "output": 82
+      },
+      "guardrailErrors": []
+    },
+    {
+      "case": "many-signals",
+      "outcome": "ok",
+      "kind": "llm",
+      "cited": [
+        "campaign:c-brand:conversion_rate",
+        "source:google_ads:conversion_rate",
+        "source:tv:calls",
+        "source:meta:calls",
+        "source:organic:conversion_rate"
+      ],
+      "coverage": 1,
+      "forbiddenCited": [],
+      "directionErrors": 1,
+      "noSignalOk": true,
+      "insights": 3,
+      "latencyMs": 4937.761251999997,
+      "tokens": {
+        "input": 651,
+        "output": 176
+      },
+      "guardrailErrors": []
+    }
+  ]
+}

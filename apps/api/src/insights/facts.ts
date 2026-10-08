@@ -1,4 +1,6 @@
 import {
+  addCounts,
+  emptyCounts,
   type Fact,
   LOW_VOLUME_THRESHOLD,
   resolvedCalls,
@@ -33,13 +35,7 @@ type Group = {
   prev: StatusCounts;
 };
 
-const zero = (): StatusCounts => ({ ringing: 0, connected: 0, missed: 0, converted: 0 });
-const add = (a: StatusCounts, b: StatusCounts) => {
-  a.ringing += b.ringing;
-  a.connected += b.connected;
-  a.missed += b.missed;
-  a.converted += b.converted;
-};
+const zero = emptyCounts;
 
 export const fmtInt = (n: number) => Math.round(n).toLocaleString("en-US");
 export const fmtPct = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -165,12 +161,7 @@ export async function computeFacts(
   const byCampaign = new Map<string, CampaignCounts>();
   for (const r of rows) {
     const c = byCampaign.get(r.id) ?? { id: r.id, name: r.name, source: r.source, cur: zero(), prev: zero() };
-    add(c[r.period], {
-      ringing: r.ringing,
-      connected: r.connected,
-      missed: r.missed,
-      converted: r.converted,
-    });
+    c[r.period] = addCounts(c[r.period], r);
     byCampaign.set(r.id, c);
   }
 
@@ -204,8 +195,8 @@ export function factsFromCounts(campaignCounts: CampaignCounts[], hours: HourCou
     };
     s.campaigns++;
     for (const g of [account, s]) {
-      add(g.cur, c.cur);
-      add(g.prev, c.prev);
+      g.cur = addCounts(g.cur, c.cur);
+      g.prev = addCounts(g.prev, c.prev);
     }
     sources.set(c.source, s);
   }
@@ -253,7 +244,7 @@ export function factsFromCounts(campaignCounts: CampaignCounts[], hours: HourCou
       id: "account:all:missed_peak_window",
       metric: "missed_peak_window",
       dimension: "account",
-      label: `Missed-call peak · ${windowLabel}`,
+      label: `Missed-call peak (2-hour window) · ${windowLabel}`,
       current: rate,
       previous: overall,
       changePct: rate - overall,

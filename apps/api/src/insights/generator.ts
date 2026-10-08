@@ -3,10 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Fact, Insight, InsightsResponse } from "@calls/shared";
 import { type ChatMessage, LlmError, type LlmGateway } from "./gateway";
-import { checkOutput, type GuardrailError, parseModelText } from "./guardrails";
+import { checkOutput, directionOf, type GuardrailError, parseModelText } from "./guardrails";
 import { renderTemplate } from "./template";
 
-export const PROMPT_VERSION = "insights.v1";
+/** v2 (2026-10-08): adds each fact's direction and rules on direction and naming, after a live eval of
+ * llama3.2:3b on v1 stated wrong directions with correct numbers. v1 stays in prompts/ for comparison. */
+export const PROMPT_VERSION = "insights.v2";
 
 /** Prompts are versioned files, reviewed like code. The version is part of the cache key and of every metric. */
 export function loadPrompt(version = PROMPT_VERSION): string {
@@ -41,6 +43,7 @@ export function factsForPrompt(facts: Fact[]) {
     id: f.id,
     label: f.label,
     metric: f.metric,
+    direction: directionOf(f), // explicit: the display values are unsigned ("7.0 pts"), so don't make the model infer it
     display: f.display,
     detail: f.detail,
   }));
@@ -54,6 +57,9 @@ export class InsightGenerator {
   constructor(
     private readonly gateway: LlmGateway | null,
     private readonly systemPrompt: string,
+    /** Total model time one generation may use. A repair round is only attempted if the first answer took less
+     * than half of it, so a slow model can't stack a timeout, a retry and a repair into a long wait. */
+    private readonly budgetMs = Number.POSITIVE_INFINITY,
     private readonly promptVersion = PROMPT_VERSION,
   ) {}
 
@@ -113,6 +119,7 @@ export class InsightGenerator {
       lastErrors = result.ok
         ? [{ check: "schema", message: "insights: expected at least 1 insight" }]
         : result.errors;
+      if (latencyMs > this.budgetMs / 2) break; // no time left for a repair round: use the template
       // One repair attempt: show the model exactly what was wrong.
       messages.push(
         { role: "assistant", content: text },

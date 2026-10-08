@@ -58,11 +58,15 @@ const gateway =
         }),
       )
     : null;
-const insights = new InsightsService(db, new InsightGenerator(gateway, loadPrompt()), {
-  metrics,
-  log,
-  budgetPerHour: config.INSIGHTS_LLM_BUDGET_PER_HOUR,
-});
+const insights = new InsightsService(
+  db,
+  new InsightGenerator(gateway, loadPrompt(), 2 * config.LLM_TIMEOUT_MS),
+  {
+    metrics,
+    log,
+    budgetPerHour: config.INSIGHTS_LLM_BUDGET_PER_HOUR,
+  },
+);
 log.info(
   { model: gateway?.model ?? null },
   gateway ? "insights: LLM enabled" : "insights: template only (no LLM configured)",

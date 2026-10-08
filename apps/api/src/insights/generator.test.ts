@@ -37,9 +37,9 @@ describe("InsightGenerator", () => {
     expect(g.tokens).toEqual({ input: 100, output: 50 });
     // The model only ever sees notable facts, and only the fields it needs.
     const sent = JSON.parse(seen[0]![1]!.content) as { facts: Array<Record<string, unknown>> };
-    expect(sent.facts.every((f) => Object.keys(f).sort().join() === "detail,display,id,label,metric")).toBe(
-      true,
-    );
+    expect(
+      sent.facts.every((f) => Object.keys(f).sort().join() === "detail,direction,display,id,label,metric"),
+    ).toBe(true);
   });
 
   it("feeds guardrail errors back once, and accepts a repaired answer", async () => {

@@ -1,3 +1,4 @@
+import type { Fact } from "@calls/shared";
 import type { ChatMessage, Completion, LlmProvider } from "../gateway";
 import type { Generation } from "../generator";
 import { checkOutput, parseModelText } from "../guardrails";
@@ -98,23 +99,62 @@ export class RecordingProvider implements LlmProvider {
   }
 }
 
-/** Plays recorded answers back in order. Lets CI re-check real model outputs against today's guardrails. */
-export class ReplayProvider implements LlmProvider {
-  current = "";
-  private cursor = new Map<string, number>();
+export type ReplayRow = {
+  case: string;
+  answers: number;
+  accepted: number;
+  rejectedBy: string;
+  /** Problems the independent scorer still finds in ACCEPTED answers. Must be 0. */
+  forbiddenInAccepted: number;
+  wrongDirectionInAccepted: number;
+};
 
-  constructor(
-    readonly model: string,
-    private readonly recordings: Record<string, string[]>,
-  ) {}
-
-  async complete(): Promise<Completion> {
-    const list = this.recordings[this.current] ?? [];
-    const i = this.cursor.get(this.current) ?? 0;
-    this.cursor.set(this.current, i + 1);
-    const text = list[i] ?? list[list.length - 1] ?? "";
-    return { text, model: this.model, inputTokens: 0, outputTokens: 0, latencyMs: 0 };
-  }
+/**
+ * Re-checks every recorded raw model answer against TODAY's guardrails, each as if it were a first attempt:
+ * "would this answer reach a user now?" Answers the guardrails accept are then scored independently, so a
+ * guardrail that lets a bad answer through shows up here. Free, deterministic, and runs in CI.
+ */
+export function replayRecording(
+  answers: Record<string, string[]>,
+  prepare: (c: EvalCase) => Fact[],
+): ReplayRow[] {
+  return CASES.filter((c) => (answers[c.name]?.length ?? 0) > 0).map((c) => {
+    const facts = prepare(c);
+    const rejections = new Map<string, number>();
+    let accepted = 0;
+    let forbidden = 0;
+    let wrongDirection = 0;
+    for (const text of answers[c.name]!) {
+      const parsed = parseModelText(text);
+      const result = parsed.ok
+        ? checkOutput(parsed.value, facts)
+        : { ok: false as const, errors: [parsed.error] };
+      if (!result.ok) {
+        for (const check of new Set(result.errors.map((e) => e.check)))
+          rejections.set(check, (rejections.get(check) ?? 0) + 1);
+        continue;
+      }
+      accepted++;
+      const score = scoreCase(c, {
+        insights: result.insights,
+        generator: { kind: "llm", model: null, promptVersion: "", fallbackReason: null },
+        outcome: "ok",
+        guardrailErrors: [],
+        tokens: { input: 0, output: 0 },
+        latencyMs: 0,
+      });
+      forbidden += score.forbiddenCited.length;
+      wrongDirection += score.directionErrors;
+    }
+    return {
+      case: c.name,
+      answers: answers[c.name]!.length,
+      accepted,
+      rejectedBy: [...rejections].map(([k, v]) => `${k} ×${v}`).join(", "),
+      forbiddenInAccepted: forbidden,
+      wrongDirectionInAccepted: wrongDirection,
+    };
+  });
 }
 
 export type Summary = {

@@ -13,12 +13,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { CircuitBreaker, LlmGateway, type LlmProvider, OpenAICompatibleProvider } from "../gateway";
-import { InsightGenerator, loadPrompt } from "../generator";
-import { CASES } from "./cases";
+import { InsightGenerator, loadPrompt, PROMPT_VERSION } from "../generator";
+import { CASES, type EvalCase } from "./cases";
 import {
   type CaseScore,
   RecordingProvider,
-  ReplayProvider,
+  replayRecording,
   runProbes,
   type Summary,
   scoreCase,
@@ -53,12 +53,7 @@ async function runCases(provider: LlmProvider | null, setCase: (name: string) =>
   for (const c of CASES) {
     for (let r = 0; r < runs; r++) {
       setCase(c.name);
-      // The service only sends notable facts, top 8 by impact; do the same here.
-      const facts = c.facts
-        .filter((f) => f.notable)
-        .sort((a, b) => b.impact - a.impact)
-        .slice(0, 8);
-      scores.push(scoreCase(c, await generator.generate(facts)));
+      scores.push(scoreCase(c, await generator.generate(forModel(c))));
     }
   }
   return scores;
@@ -92,6 +87,13 @@ function gates(s: Summary, llm: boolean) {
   }
 }
 
+/** What the service sends the model: notable facts only, top 8 by impact. */
+const forModel = (c: EvalCase) =>
+  c.facts
+    .filter((f) => f.notable)
+    .sort((a, b) => b.impact - a.impact)
+    .slice(0, 8);
+
 console.log("\n== Guardrail probes (deterministic) ==");
 const probes = runProbes();
 console.table(probes);
@@ -112,20 +114,23 @@ const recDir = join(EVALS_DIR, "recordings");
 for (const file of existsSync(recDir) ? readdirSync(recDir).filter((f) => f.endsWith(".json")) : []) {
   const rec = JSON.parse(readFileSync(join(recDir, file), "utf8")) as {
     model: string;
+    promptVersion?: string;
     answers: Record<string, string[]>;
   };
-  console.log(`\n== Replay of recorded answers: ${rec.model} (${file}) ==`);
-  const replay = new ReplayProvider(rec.model, rec.answers);
-  const scores = await runCases(
-    replay,
-    (n) => {
-      replay.current = n;
-    },
-    1,
+  console.log(
+    `\n== Recorded answers vs today's guardrails: ${rec.model}, prompt ${rec.promptVersion ?? "?"} (${file}) ==`,
   );
-  const s = summarize(scores);
-  printScores(scores, s);
-  gates(s, true);
+  const rows = replayRecording(rec.answers, forModel);
+  console.table(rows);
+  const total = rows.reduce((a, r) => a + r.answers, 0);
+  const accepted = rows.reduce((a, r) => a + r.accepted, 0);
+  console.log(
+    `  ${accepted}/${total} recorded answers would reach a user today; the rest fall back to the template.`,
+  );
+  gate(
+    rows.every((r) => r.forbiddenInAccepted === 0 && r.wrongDirectionInAccepted === 0),
+    "no accepted answer cites noise or states a wrong direction",
+  );
 }
 
 if (args.live) {
@@ -159,17 +164,23 @@ if (args.live) {
   const out = join(
     EVALS_DIR,
     "results",
-    `${new Date().toISOString().slice(0, 16).replace(":", "")}-${slug}.json`,
+    `${new Date().toISOString().slice(0, 16).replace(":", "")}-${slug}-${PROMPT_VERSION}.json`,
   );
   writeFileSync(
     out,
-    `${JSON.stringify({ model: LLM_MODEL, promptVersion: "insights.v1", runs, summary: s, scores }, null, 2)}\n`,
+    `${JSON.stringify({ model: LLM_MODEL, promptVersion: PROMPT_VERSION, runs, summary: s, scores }, null, 2)}\n`,
   );
   console.log(`results: ${out}`);
   if (args.record) {
     mkdirSync(recDir, { recursive: true });
-    const rec = join(recDir, `${slug}.json`);
-    writeFileSync(rec, `${JSON.stringify({ model: LLM_MODEL, answers: recorder.recordings }, null, 2)}\n`);
+    const rec = join(recDir, `${slug}.${PROMPT_VERSION}.json`);
+    const body = {
+      model: LLM_MODEL,
+      promptVersion: PROMPT_VERSION,
+      recordedAt: new Date().toISOString(),
+      answers: recorder.recordings,
+    };
+    writeFileSync(rec, `${JSON.stringify(body, null, 2)}\n`);
     console.log(`recording: ${rec}`);
   }
 }

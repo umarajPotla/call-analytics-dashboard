@@ -95,6 +95,39 @@ export const PROBES: GuardrailProbe[] = [
     expect: "json",
     output: () => "Brand search conversion dropped this week. You should look into it!",
   },
+  // Found by the live eval of llama3.2:3b on prompt v1: every number right, the story wrong.
+  {
+    name: "right-numbers-wrong-direction",
+    caseName: "conversion-drop",
+    expect: "wrong_direction",
+    output: (facts) => {
+      const f = fact(facts, BRAND);
+      return json([{ ...good(facts), title: `Brand search conversion up ${f.display[2]}` }]);
+    },
+  },
+  {
+    name: "mixed-directions-lumped-together",
+    caseName: "mixed-directions",
+    expect: "wrong_direction",
+    output: (facts) => {
+      const brand = fact(facts, BRAND);
+      const meta = fact(facts, "source:meta:conversion_rate");
+      return json([
+        {
+          title: "Conversion rates decreased",
+          body: `Brand search fell to ${brand.display[0]} and Meta to ${meta.display[0]}.`,
+          action: null,
+          factIds: [brand.id, meta.id],
+        },
+      ]);
+    },
+  },
+  {
+    name: "names-a-channel-it-does-not-cite",
+    caseName: "mixed-directions",
+    expect: "uncited_mention",
+    output: (facts) => json([{ ...good(facts), body: `${good(facts).body} Meta looks different.` }]),
+  },
   // ---- must accept ----
   {
     name: "well-formed",
@@ -107,6 +140,23 @@ export const PROBES: GuardrailProbe[] = [
     caseName: "conversion-drop",
     expect: "accept",
     output: (facts) => `\`\`\`json\n${json([good(facts)])}\n\`\`\``,
+  },
+  {
+    name: "mixed-directions-told-apart",
+    caseName: "mixed-directions",
+    expect: "accept",
+    output: (facts) => {
+      const brand = fact(facts, BRAND);
+      const meta = fact(facts, "source:meta:conversion_rate");
+      return json([
+        {
+          title: "Brand search down, Meta up",
+          body: `Brand search conversion fell to ${brand.display[0]} while Meta rose to ${meta.display[0]}.`,
+          action: null,
+          factIds: [brand.id, meta.id],
+        },
+      ]);
+    },
   },
   {
     name: "action-may-be-null",
