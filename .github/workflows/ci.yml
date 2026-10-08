@@ -77,11 +77,11 @@ jobs:
           echo "Prometheus: 6 alert rules, API scraped. Grafana: 4 dashboards, 2 data sources."
       - name: Screenshots
         run: pnpm --filter @calls/web exec node e2e/screenshots.mjs screenshots
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with: { name: screenshots, path: apps/web/screenshots, retention-days: 14 }
       - name: Logs on failure
         if: failure()
         run: docker compose --profile observability logs --no-color --tail 300
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: failure()
         with: { name: playwright-report, path: apps/web/playwright-report, retention-days: 7 }
