@@ -26,6 +26,8 @@ import {
 } from "./harness";
 
 const { values: args } = parseArgs({
+  // Accept both `pnpm eval --live` and `pnpm eval -- --live`.
+  args: process.argv.slice(2).filter((a) => a !== "--"),
   options: {
     live: { type: "boolean", default: false },
     runs: { type: "string", default: "1" },

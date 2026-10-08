@@ -1,7 +1,7 @@
 # Real-Time Call Analytics — Design & Decisions
 
-**Author:** <Your Name> · **Date:** October 7, 2026 · **Status:** v1.0. Decisions are final unless an assumption marked *Confirm* is contradicted at kickoff; any change goes in the [change log](#15-change-log).
-**Repo:** `<github link>` · **Live demo:** `<render link>` · **Diagrams:** [`docs/diagrams/`](diagrams/)
+**Author:** Umaraj Potla · **Date:** October 8, 2026 · **Status:** v1.1, as built. There was no kickoff call, so every assumption marked *Confirm* below is a stated assumption I'll walk through at the review. Changes made while building are in the [change log](#15-change-log).
+**Repo:** [github.com/umarajPotla/call-analytics-dashboard](https://github.com/umarajPotla/call-analytics-dashboard) · **Live demo:** see the README · **Diagrams:** [`docs/diagrams/`](diagrams/) · **Runbook:** [`RUNBOOK.md`](RUNBOOK.md)
 
 ---
 
@@ -82,14 +82,14 @@ Editable source: [`diagrams/01-architecture.excalidraw`](diagrams/01-architectur
 | **Ingest service** | Validate → dedupe → state machine → update projection + rollup **in one transaction** → notify |
 | **SSE hub** | One `LISTEN` per instance; per-account fan-out; heartbeats; replay on reconnect; backpressure |
 | **Insights service** | Deterministic facts (SQL) → LLM gateway → guardrails → cache; template fallback |
-| **Simulator** | Seeded, realistic traffic sent **through the public ingest API** (no direct DB writes) |
+| **Simulator** | Seeded, realistic live traffic sent **through the public ingest API**; history is bulk-loaded like a data import (D11) |
 | **PostgreSQL** | `call_events` (log), `calls` (current state), `call_stats_hourly` (rollup), `insight_*` (cache, feedback) |
-| **Observability** | OpenTelemetry → Prometheus → Grafana (dashboards and alerts provisioned from the repo) |
+| **Observability** | Prometheus metrics → Grafana (four dashboards) and Prometheus alert rules, all provisioned from the repo |
 | **External** | LLM provider (Ollama locally / Gemini free tier hosted). Future: telephony and CRM feeds |
 
 **Main flows**
 
-1. **Ingest:** `POST /api/v1/call-events` → one transaction: insert event (`ON CONFLICT DO NOTHING`), lock the call row, apply the state transition, upsert the call, apply ±1 deltas to the hourly rollup, `pg_notify` → `202`.
+1. **Ingest:** `POST /api/v1/call-events` → one transaction per event: take a per-call advisory lock, insert the event (`ON CONFLICT DO NOTHING`), apply the state transition, upsert the call, apply ±1 deltas to the hourly rollup, `pg_notify` → `200` with an outcome per event (`applied`, `duplicate`, `noop`, `rejected`).
 2. **Charts:** `GET …/metrics/*` reads `call_stats_hourly` (≈168 rows × campaigns per week) and returns zero-filled buckets.
 3. **Live:** `NOTIFY` → hub → `event: call.updated` to that account's clients → the browser upserts the feed row and **throttles** a chart refetch (≤ once per 5 s).
 4. **Reconnect:** the browser sends `Last-Event-ID` → the server replays events with a higher sequence number (bounded, with a small overlap) → the client dedupes.
@@ -112,7 +112,7 @@ Format: **Decision** → why → trade-off I accept → when I'd revisit.
 | D10 | REST `/api/v1` + OpenAPI + RFC 9457 errors + keyset pagination |
 | D11 | Deterministic simulator that uses the public ingest API |
 | D12 | AI insights: deterministic facts + LLM phrasing + grounding checks + evals, behind a provider-agnostic gateway |
-| D13 | OpenTelemetry metrics → Prometheus → Grafana, dashboards and alerts as code. Grafana is for operators, not customers |
+| D13 | Prometheus metrics → Grafana, dashboards and alerts as code. Grafana is for operators, not customers |
 | D14 | Docker Compose locally (with profiles); Render + Neon free tiers for the hosted demo |
 | D15 | Test where the risk is: state machine, rollup math, time bucketing, tenancy, SSE, LLM guardrails |
 
@@ -149,7 +149,8 @@ Known subtlety: sequence numbers are assigned at insert, not commit, so replay u
 **D7 — Throttled refetch instead of client-side aggregation.** Recomputing charts in the browser from individual events would duplicate the metric logic and drift. A refetch at most every 5 s per open dashboard is cheap at demo scale.
 *Revisit:* at scale this is the first thing to break (read amplification); the fix is a server-side aggregate cache plus pushed "stats changed" events (§11).
 
-**D8 — Time.** `timestamptz` in UTC; rollups are UTC hours; daily views group hours into **local days** in the account's IANA time zone, which is correct for 23- and 25-hour DST days. Ranges are half-open `[from, to)`. Buckets are zero-filled on the server. Fixed-clock tests cover the US (Nov 1, 2026) and UK (Oct 25, 2026) DST changes.
+**D8 — Time.** `timestamptz` in UTC; rollups are UTC hours; daily views group hours into **local days** in the account's IANA time zone, which is correct for 23- and 25-hour DST days. Ranges are half-open `[from, to)`. Buckets are zero-filled on the server. Postgres does the zone math, and every query names its zone, so results never depend on the server's or the session's zone (the integration tests run their sessions in UTC+13:45 to prove it). Tests cover the US (Nov 1, 2026) and UK (Oct 25, 2026) DST weeks.
+*Comparisons are like for like:* "this week so far" is compared with last week **up to the same local time**, and last week's conversions are counted **as they were known at the same point**, because the current week is still collecting late conversions. Without this, every dashboard would show a false drop in conversion rate every day.
 *Known limitation:* half-hour-offset zones (A9).
 
 **D9 — Multi-tenancy.** Every table carries `account_id`. The tenant is in the URL path and checked by authorization middleware (stubbed identity, real scoping). Tests assert account A can never read account B. Postgres row-level security is the production defense in depth.
@@ -157,26 +158,26 @@ Known subtlety: sequence numbers are assigned at insert, not commit, so replay u
 **D10 — API.** Versioned REST under `/api/v1`, OpenAPI at `/api/docs`, RFC 9457 problem+json errors, input validation on every route. Keyset pagination on `(started_at, id)` stays stable while new calls stream in. Hourly ranges are capped at 31 days. Metrics responses send `Cache-Control: private, max-age=5`.
 
 **D11 — Simulator through the front door.**
-- **Realistic traffic:** arrivals follow business-hour and weekday curves per account time zone; answer and conversion rates vary by source; call durations are log-normal; ~35% of conversions arrive late (up to 72 h).
-- **Deterministic:** seeded per minute, so any window regenerates identically.
-- **Self-healing on cold start:** it backfills on boot and catches up after sleeping.
-- **Chaos knobs:** duplicates (~2%) and reordering (~1%) prove idempotency live.
+- **Realistic traffic:** arrivals follow business-hour and weekday curves per account time zone; answer rates drop after hours; conversion varies by campaign and rises with call duration; durations are log-normal; ~35% of conversions arrive late (up to 72 h). Each campaign also drifts slowly on its own multi-week cycle, so week-over-week comparisons contain real changes for the insights to find, not just noise.
+- **Deterministic:** seeded per minute, so any window regenerates identically, and event ids are deterministic, so re-sending is idempotent.
+- **Self-healing on cold start:** it loads history on boot and catches up after the free host sleeps.
+- **Chaos knobs:** duplicates (~2%) and reordering (~1%) prove idempotency live; a demo control multiplies one account's traffic 6× for 10 minutes.
 
-Because the simulator uses the public ingest API, swapping in a real telephony feed is a configuration change.
+**Live** events go through the public ingest API, so swapping in a real telephony feed is a configuration change. *Trade-off:* **history** (14 days, ~100k calls) is bulk-loaded set-based, like an initial data import, using the same state machine, then the rollup is rebuilt from it. Pushing it through per-event transactions against a free remote database would take far too long on every cold start.
 
 **D12 — AI insights: grounded, measured, replaceable** (details in §7). The LLM **never computes numbers and never writes SQL**. SQL computes the facts; the model only selects and phrases them, and every number it outputs is checked against those facts.
 *Trade-off:* less "magic" than free-form chat. In exchange, the output is verifiable, cheap, testable in CI and degrades gracefully to deterministic text.
 
 **D13 — Observability as code.**
-- **Instrumentation:** OpenTelemetry SDK. Metrics are exposed in Prometheus format and scraped locally. Traces export via OTLP when an endpoint is configured.
-- **Grafana (self-hosted, free):** datasources, three dashboards and alert rules are provisioned from `ops/grafana/`, so `docker compose --profile observability up` gives a working ops view with zero clicks.
-- **Hosted option:** Grafana Cloud's free tier (no card; 10k active metric series, 50 GB logs, 50 GB traces, 14-day retention, 3 users).
+- **Instrumentation:** the official Prometheus client (`@prometheus-io/client`), exposed at `/metrics`, plus structured JSON logs. I chose plain Prometheus over the OpenTelemetry SDK for this build: one process and no collector means less to run for the same dashboards. Tracing is the next step (one span per request and per LLM call, GenAI attributes).
+- **Grafana (self-hosted, free):** data sources and four dashboards are provisioned from `ops/grafana/` (generated by a script, `pnpm dashboards`); alert rules live in `ops/prometheus/alerts.yml` with runbook links. `docker compose --profile observability up` gives a working ops view with zero clicks, and CI checks that it does.
+- **Hosted option:** Grafana Cloud's free tier (no card; 10k active metric series, 14-day retention).
 
-*Why not build the customer dashboard in Grafana:* the product view needs tenant-aware access, metric semantics (resolved vs answered, maturity markers), a live feed that updates in place, and UX made for a non-technical user. Grafana is the right tool for **operators**; the React app is for **Maya**. Grafana also gets an internal "business cross-check" panel that reads the rollups directly, and its numbers must match the product UI.
+*Why not build the customer dashboard in Grafana:* the product view needs tenant-aware access, metric semantics (resolved vs answered, maturity markers), a live feed that updates in place, and UX made for a non-technical user. Grafana is the right tool for **operators**; the React app is for **Maya**. Grafana also gets an internal **Business overview** dashboard that reads Postgres through a read-only role; its numbers must match the product UI, which makes it a cross-check as well as a quick internal view.
 
 **D14 — Runs anywhere for $0.**
-- **Local:** `docker compose up` (Postgres, API, simulator, web). Optional profiles: `observability` (Prometheus, Grafana) and `ai` (points at Ollama; on macOS run Ollama natively for Apple-silicon acceleration).
-- **Hosted:** Render free web service serving the API and the built SPA from one origin, plus Neon free Postgres.
+- **Local:** `docker compose up` (Postgres plus one image serving API, simulator and dashboard). Optional profile `observability` adds Prometheus and Grafana. AI: point `LLM_BASE_URL` at Ollama running natively on the host (Apple-silicon acceleration), reached as `host.docker.internal`.
+- **Hosted:** Render free web service serving the API and the built SPA from one origin (`render.yaml` Blueprint), plus Neon free Postgres. The app runs behind Neon's transaction-mode pooler: no session settings, and the two things that need a real session (migrations' advisory lock and `LISTEN`) use the direct URL.
 - *Rejected:* Render's free Postgres (expires after 30 days), Fly.io and Railway (trial only), serverless functions for SSE (duration caps).
 - **Neon's limits:** no keep-alive pinger, so Neon's free compute hours aren't burned.
 
@@ -192,19 +193,24 @@ Because the simulator uses the public ingest API, swapping in a real telephony f
 
 **Pipeline**
 
-1. **Facts (deterministic SQL over rollups).** Period-over-period changes in volume, missed calls and conversion rate by source and campaign, plus hour-of-day concentration of misses. A fact is **notable** only if |Δ| ≥ 15% and volume ≥ 30, or, for rates, a two-proportion z-test with |z| ≥ 2. Each fact gets a stable id and pre-formatted numbers.
-2. **Selection.** Rank by impact (|Δ| × volume) and keep the top 6, so the prompt is small and the token cost bounded.
-3. **Generation.** A versioned prompt (`prompts/insights.v1.md`) asks for JSON matching a Zod schema: `{ insights: [{ title ≤ 80 chars, body ≤ 240 chars, factIds[], action? }] }`, at most 3 insights.
-4. **Guardrails.**
-   - The output must match the schema.
-   - Every `factId` must exist.
-   - **Every number in the text must appear in the cited facts** (normalized: `38%`, `212`, `154`).
-   - Length limits apply, and only aggregates ever reach the prompt.
-   - One retry with the validation error fed back, then **fallback** to a deterministic template rendered from the same facts.
-5. **Caching and cost control.** Cache key = hash(prompt version, model, facts). TTL is 15 min, with single-flight request coalescing. Insights are **never regenerated per live event**.
-6. **Feedback.** 👍/👎 on each insight is stored with the prompt version and model, and becomes new eval cases.
+1. **Facts (deterministic SQL).** Like-for-like period-over-period changes (D8) in volume, missed calls and conversion rate for the account, each source and each campaign, plus the local 2-hour window with the most *excess* missed calls. Each fact gets a stable id and pre-formatted numbers. A fact is **notable** only if it is both big enough to matter and unlikely to be noise:
+   - counts: |Δ| ≥ 15%, ≥ 30 in both periods, and a Poisson z ≥ 3
+   - rates: |Δ| ≥ 2 points, ≥ 30 resolved calls in both periods, and a two-proportion |z| ≥ 3
+   - *Why z ≥ 3, not the textbook 2:* one view tests ~50 facts at once. At z ≥ 2 that's ~2 false alarms per view from noise alone; at z ≥ 3 it's ~0.1 (a Bonferroni-style correction). I found this by running the first version against the simulator: it confidently reported changes that were pure noise.
+2. **Selection.** Every fact's impact is in one unit, **estimated conversions gained or lost** (Δcalls × conversion rate, Δmissed × conversion rate of answered calls, Δrate × resolved calls), so a volume spike and a conversion drop can be ranked fairly. Only notable facts reach the model, the top 8 by impact, so the prompt stays small and the cost bounded. If nothing is notable, the model is not called at all.
+3. **Generation.** A versioned prompt (`prompts/insights.v1.md`) asks for JSON matching a Zod schema: `{ insights: [{ title ≤ 80 chars, body ≤ 240 chars, factIds[1–4], action? }] }`, at most 3 insights. The model sees only ids, labels and pre-formatted numbers: aggregates, never calls or callers.
+4. **Guardrails** (deterministic, `guardrails.ts`).
+   - The output must parse as JSON (a Markdown fence is tolerated) and match the schema.
+   - Every cited fact must exist **and be notable**.
+   - **Every number in the text must appear in the facts that insight cites** (normalized: `1,234` = `1234`, `20.0%` = `20%`).
+   - On failure: one repair round with the exact errors fed back, then **fallback** to a deterministic template rendered from the same facts (which passes the guardrails by construction, and a test proves it).
+5. **Caching and cost control.**
+   - A **15-minute freshness window** per (account, range, prompt version, model): live data moves every second, so without it the facts would never be identical twice. Insights are **never regenerated per live event**.
+   - A **content-addressed key** = hash(prompt version, model, facts): identical facts never pay for a second generation.
+   - **Single-flight** coalescing, a **per-account hourly budget** of model calls (then the template answers), and template answers given because the model was down are cached for only 60 s so the model is retried soon.
+6. **Feedback.** 👍/👎 on each insight is stored with the prompt version, the model, and a snapshot of the insight and the facts it cited, exactly as the user saw them, so a thumbs-down can become an eval case without guesswork.
 
-**LLM gateway.** One small interface, `generateStructured<T>(schema, messages, { timeoutMs, maxTokens })`, with a single **OpenAI-compatible adapter** configured by environment variables (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`):
+**LLM gateway.** A small `LlmProvider` interface with a single **OpenAI-compatible adapter**, configured by environment variables (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`). The `InsightGenerator` (facts in, insights out, no database) is the exact code path that both production and the eval harness run.
 
 | Environment | Provider | Why |
 |---|---|---|
@@ -214,29 +220,30 @@ Because the simulator uses the public ingest API, swapping in a real telephony f
 | CI | **Recorded provider** (fixtures) | Deterministic, free, no network |
 | Disabled | **Template provider** | Feature still works with no LLM at all |
 
-The gateway also owns **timeouts** (8 s), **one retry with backoff**, a **circuit breaker** (open after 5 failures in 60 s → template), **per-tenant rate limits**, and **telemetry**. Adding a second AI feature means reusing the gateway, the prompt files, the eval harness and the guardrail helpers. That's the platform point.
+The gateway also owns **timeouts** (8 s), **one retry** on transient errors (5xx, 429, network; not on timeouts, because the user already waited), a **circuit breaker** (open after 5 failures in 60 s, one trial request after 30 s), and **metering** (latency, tokens, estimated cost). Adding a second AI feature means reusing the gateway, the prompt files, the eval harness and the guardrail helpers. That's the platform point.
 
-**Evals** (`evals/insights/`)
+**Evals** (`apps/api/src/insights/eval/`, run with `pnpm eval`)
 
-- **Cases:** 15–20 fact sets covering a spike, a drop, low-volume traps, no change, mixed signals, rate up while volume down, all zeros, a single campaign, and a DST week.
-- **Checks** (all deterministic):
+- **Cases:** realistic weeks of counts turned into facts by the **same rules production uses**: a conversion drop, a TV volume spike, a quiet week, low-volume noise next to a real change, mixed directions, evening misses, and a busy week with more signals than fit.
+- **Guardrail probes:** model outputs that must be rejected (an invented number, a number borrowed from a fact the insight doesn't cite, an unknown or noisy fact, too many insights, too long, prose instead of JSON) and outputs that must be accepted (fenced JSON, a null action), so the checks can't quietly become too strict either.
+- **Scoring beyond the guardrails:**
 
 | Check | Gate |
 |---|---|
-| Schema valid | ≥ 98% |
-| **Grounding: no ungrounded numbers** | **100% (hard gate)** |
-| Valid fact ids | 100% |
-| Highest-impact fact covered | ≥ 90% |
-| Low-volume facts never cited as notable | 100% |
-| Latency p95, tokens per insight | Reported, not gated |
+| **Guardrail probes behave as expected** | **100% (hard gate, CI)** |
+| Never cites a low-volume or noisy fact | 0 violations |
+| Never states the wrong direction of a change ("up" for a drop) | 0 violations |
+| Quiet periods answered without calling the model | 100% |
+| Key findings covered | 100% template, ≥ 80% model |
+| Template fallbacks when the model is asked | ≤ 10% |
+| Latency p50/p95, tokens per case | Reported, not gated |
 
-- **CI** runs the suite against recorded responses on every PR (free and deterministic).
-- **Live runs** compare models and prompt versions: `pnpm eval --provider=ollama|gemini`. Results are committed under `evals/results/`.
+- **CI** runs the probes, the template answers and a **replay of recorded real model answers** on every push: free, deterministic, no network.
+- **Live runs** (`pnpm eval --live --runs 3 --record`) run the cases against the configured model, write a results file to `apps/api/evals/results/`, and record the raw answers for replay in CI.
 
 **Telemetry.**
-- One OpenTelemetry span per generation, with GenAI semantic-convention attributes (model, input/output tokens).
-- Metrics: latency, tokens, outcome (`ok | invalid | timeout | fallback`), cache hit rate, grounding failures, and estimated cost from a price table ($0 on free tiers, but the mechanism exists).
-- These appear in the Grafana "AI insights" dashboard. Prompts and responses are logged only in development.
+- Metrics: generations by outcome (`ok`, `repaired`, `invalid`, `timeout`, `error`, `circuit_open`, `rate_limited`, `no_llm`, `no_signal`), guardrail rejections by check, LLM latency, tokens, estimated cost from a price table ($0 on free tiers, but the mechanism exists), cache hits (fresh / content / miss), and feedback.
+- These appear in the Grafana "AI insights" dashboard, with an alert when more than 20% of generations fall back. Guardrail rejections are logged with their reasons; prompts and responses are not logged.
 
 **Next (not built):** "Ask the dashboard" — natural language → a **validated filter object** through tool calling (never SQL), evaluated by exact match on a golden set of queries.
 
@@ -244,35 +251,37 @@ The gateway also owns **timeouts** (8 s), **one retry with backoff**, a **circui
 
 | Dashboard (provisioned) | Panels |
 |---|---|
-| **Service health** | Requests/s, errors, p95 latency by route; ingest events/s; **ingest lag** p95 (`received_at − occurred_at`); duplicates and rejected events; SSE connected clients and disconnects; DB pool usage |
-| **AI insights** | Generations by outcome; p95 latency; tokens in/out; cache hit rate; grounding failures; fallback rate; estimated cost |
-| **Data correctness** | Rollup drift rows (must be 0); events received vs applied; business cross-check (calls, conversion rate) read straight from the rollups |
+| **Service health** | API up; requests/s and p95 latency by route; 5xx rate; ingested events by outcome; **ingest lag** p50/p95 (event occurred → stored); live-feed connections and disconnects by reason; event-loop lag, memory, CPU |
+| **AI insights** | Generations by outcome; fallback rate; grounded-first-try rate; LLM latency p50/p95; tokens; cache hit rate; guardrail rejections by check; estimated spend; feedback |
+| **Data correctness** | Rollup drift buckets (must be 0); duplicates absorbed; out-of-order no-ops; rejections by reason |
+| **Business overview (SQL)** | Calls, conversion and answer rate, missed calls, calls per hour by status, conversion by source, latest calls, per account, read through a read-only Postgres role |
 
-**Alerts (provisioned):** ingest lag p95 > 10 s · rollup drift > 0 · SSE error rate > 5% · insight fallback rate > 20% · `/readyz` failing.
-**Logs:** structured JSON (pino) with request id and account id; caller numbers never logged.
-**Health:** `/healthz` (process up) and `/readyz` (database reachable).
+**Alerts (Prometheus rules, each with a runbook link):** API down · ingest lag p95 > 10 s · rollup drift > 0 · 5xx rate > 2% · slow-client disconnects > 5% · insight fallback rate > 20%. See [`RUNBOOK.md`](RUNBOOK.md).
+**Logs:** structured JSON (pino), secrets redacted at the source; per-request logs only at debug level, because latency and status go to metrics; caller numbers are never logged.
+**Health:** `/healthz` (process up) and `/readyz` (database reachable), used by the Docker healthcheck and Render.
 
 ## 9. Testing and quality
 
 | Layer | Tooling | What it proves |
 |---|---|---|
-| Unit | Vitest | Every state-machine transition (including stale and rejected); metric math (zero denominators, low-volume); time bucketing (DST days, `[from, to)` boundaries) |
-| Property-based | fast-check | Random lifecycles + shuffled order + duplicates ⇒ rollup equals a fresh recomputation |
-| Integration | Testcontainers (real Postgres) | Idempotency; concurrent events on one call; late conversion moves counts; **tenant isolation**; pagination stability |
-| API contract | Fastify `inject` | Validation, problem+json errors, defaults, foreign-campaign 404 |
-| SSE | Integration | Account-scoped delivery, `Last-Event-ID` replay, heartbeat, slow-client disconnect |
-| AI guardrails | Vitest + eval suite | Grounding checker, schema, fallback path, circuit breaker |
-| E2E smoke | Playwright | Loads, filters update URL and data, a simulated call appears live |
+| Unit | Vitest | Every state-machine transition (including stale and rejected); metric math (zero denominators, low volume); fact rules (thresholds, ranking, peak window); gateway (retry, timeout, circuit breaker); generator (repair round, fallbacks); the live-feed merge (dedupe, in-place updates, out-of-order) |
+| Property-based | fast-check | Random lifecycles + shuffled order + duplicates + concurrent streams ⇒ rollup equals a fresh recount |
+| Integration | Vitest + real Postgres | Idempotency; late conversions; **tenant isolation**, even when asked for another tenant's campaign ids; keyset pagination; totals agree across endpoints; DST weeks (US and UK); like-for-like comparisons with late conversions; every query is independent of the session time zone |
+| API contract | Fastify `inject` | Validation with field paths, problem+json errors, range limits, OpenAPI document |
+| SSE | Integration (real HTTP) | Push after commit, `Last-Event-ID` replay of the current state, campaign filtering |
+| AI | Eval suite (`pnpm eval`) | Guardrail probes, template answers, replay of recorded model answers; live runs on demand |
+| E2E smoke | Playwright, against `docker compose up` | Loads, live feed connects, a traffic spike shows new calls, filters update the URL and survive reload, insights render |
 
-**CI (GitHub Actions):** lint → typecheck → unit → integration (Postgres service) → evals (recorded) → build → E2E smoke.
-**Benchmark:** at ~10M calls across 500 accounts, I compare rollup reads against raw aggregation (p50/p95 plus `EXPLAIN ANALYZE`), measured on my machine and published in `docs/benchmarks.md`.
+**CI (GitHub Actions, every push):** lint → typecheck → unit → evals → integration (Postgres service) → build the Docker image and start the stack with `docker compose` → Playwright smoke test → start Prometheus and Grafana and check that the alert rules load, the API is scraped and all dashboards are provisioned.
+**Benchmark:** cut for time (see the change log). The scaling claims in §11 are reasoned, not measured.
 
 ## 10. Security and privacy
 
-- Tenant scoping on every query, plus an isolation test suite. Row-level security is the production next step.
-- Caller numbers are masked at ingest. Only aggregates are sent to LLMs. No raw PII in logs.
-- Validation and body-size limits on every endpoint; rate limit on ingest; same-origin hosting, so no CORS surface.
-- Secrets come only from environment variables (`.env.example` committed). Free LLM tiers are used for synthetic data only (A13).
+- Tenant scoping on every query, plus isolation tests. Row-level security is the production next step.
+- Caller numbers are masked at ingest and never stored raw. Only aggregates are sent to LLMs. No raw PII in logs.
+- Validation on every endpoint, a 1 MB body limit and at most 500 events per ingest request; same-origin hosting, so no CORS surface. Rate limiting is the next step for a public ingest endpoint.
+- Authentication is stubbed (a non-goal, §2): every request acts as a demo user who may see the demo accounts. The tenant guard is real.
+- The container runs as a non-root user. Secrets come only from environment variables (`.env.example` and `render.yaml` hold none). Free LLM tiers are used for synthetic data only (A13).
 
 ## 11. Scaling path
 
@@ -299,28 +308,29 @@ The gateway also owns **timeouts** (8 s), **one retry with backoff**, a **circui
 
 **Evolution:** v0 (this build) → v1 (~50 customers: replicas, aggregate cache, pushed deltas) → v2 (~500: event stream, projection workers, realtime gateway, OLAP, per-tenant limits) → v3 (cells, regional data residency). Each step is triggered by a measured symptom, not added ahead of need.
 
-## 12. Delivery plan
+## 12. Delivery
 
-| When | Milestone |
+Planned as three days with a kickoff on day 0; delivered in two without one.
+
+| When | Delivered |
 |---|---|
-| Day 0 | Kickoff; confirm A1–A7; repo, CI and Compose skeleton |
-| Day 1 | Schema, state machine and ingest (with tests), simulator, metrics + calls endpoints → **numbers visible via `curl`** |
-| Day 2 | SSE hub, dashboard (filters, volume, conversion, live feed, KPIs), property and E2E tests → **full flow works locally** |
-| Day 3 AM | AI insights (time-boxed ~5 h): facts, gateway, guardrails, panel, evals |
-| Day 3 PM | Grafana provisioning, deploy, benchmark, diagrams, README / decision summary |
+| Day 1 | Design and assumptions; schema, state machine and idempotent ingest with property tests; simulator; read APIs; SSE live feed; AI insights with guardrails and evals; the React dashboard |
+| Day 2 | Docker image and Compose stack; Prometheus alerts and Grafana dashboards as code; CI that runs the stack end to end; DST and like-for-like tests; diagrams, runbook, README; hosted demo |
 
-**Cut order if time runs short:** hosted Grafana → live LLM on the hosted demo (the template fallback stays) → benchmark → E2E tests.
+**Cut order, as planned:** hosted Grafana → live LLM on the hosted demo (the template fallback stays) → benchmark → E2E tests. **Cut:** hosted Grafana and the benchmark.
 **Never cut:** the four core features, ingest correctness tests, the decision summary, the diagram, the one-command run.
 
 ## 13. How I use AI tools while building
 
-- **Design first, by me:** this document, the metric definitions and the state machine come before any generated code.
-- **Small, reviewable slices:** I generate code one module at a time and review it as I would a teammate's PR.
-- **Tests as the contract:** I specify the high-risk tests myself.
-- **AI as a reviewer:** I use AI to attack the design ("find edge cases in this transition table").
-- **A running log:** the README records which parts were AI-assisted, what I changed, and where my confidence in extending them is lower.
+- **Design first:** this document, the metric definitions and the state machine come before any generated code.
+- **Small, reviewable slices:** code is generated one module at a time and reviewed as a teammate's PR would be, then committed in small, described commits.
+- **Tests as the contract:** the high-risk behaviour (idempotency, ordering, rollup reconciliation, tenant isolation, time zones, grounding) is pinned by tests, and CI runs the whole stack the way a reviewer would.
+- **Run it, look at it, question it:** several of the most important decisions in the change log came from running the system and noticing that a number was wrong or misleading, not from the generated code.
+- **A running log:** the README says how AI was used and where to look hardest.
 
-## 14. Questions for the kickoff call
+## 14. Questions I'd have asked at a kickoff
+
+There was no kickoff call, so these are stated as assumptions (§3) and are the first things I'll walk through at the review.
 
 1. Who exactly is the user: one brand's marketing manager, or an agency? (A1)
 2. When does a call count as converted, and how late can a conversion arrive? (A2)
@@ -335,4 +345,15 @@ The gateway also owns **timeouts** (8 s), **one retry with backoff**, a **circui
 | Date | Change | Reason |
 |---|---|---|
 | 2026-10-07 | v1.0 | Initial decisions and assumptions |
-| | *(post-kickoff updates go here)* | |
+| 2026-10-08 | No kickoff call: every *Confirm* assumption stands as written | Covered at the review instead (§14) |
+| 2026-10-08 | **Like-for-like comparisons**: a partial period is compared with the previous one cut at the same local time, and the previous period's conversions are counted as known at the same point (D8) | Running the first version, every week looked worse than the last: today is partial and the last 72 h haven't collected their late conversions yet |
+| 2026-10-08 | Insight notability **z ≥ 3** plus effect-size floors; ranking in **estimated conversions** (§7) | At z ≥ 2 the first version confidently reported pure noise (~50 facts tested per view); ranking by change × volume mixed incomparable units |
+| 2026-10-08 | Two-level insight cache: **15-min freshness window** + facts-hash key (§7) | With live data the facts change every second, so a facts-hash key alone would almost never hit |
+| 2026-10-08 | Prometheus client instead of the OpenTelemetry SDK (D13) | Same dashboards with less to run; tracing is the next step |
+| 2026-10-08 | Simulator history is **bulk-loaded**; live traffic still goes through the ingest API (D11) | ~100k calls per cold start through per-event transactions on a free remote database is too slow |
+| 2026-10-08 | Simulator runs **in-process** (diagram 1 said "container locally"); a standalone CLI also exists | One service on the free host; nothing to orchestrate locally |
+| 2026-10-08 | KPI tiles and conversion rates **ignore the outcome filter**, and say so in the UI and API (`ignoredFilters`) | "Conversion rate of missed calls only" is meaningless; silently applying the filter would mislead |
+| 2026-10-08 | Ingest returns **200 with an outcome per event** instead of 202 | The sender learns synchronously which events were duplicates, no-ops or rejected |
+| 2026-10-08 | Runs behind Neon's transaction-mode pooler: no session settings; direct URL for migrations and `LISTEN` (D14) | Poolers reject startup options and don't keep session state |
+| 2026-10-08 | Fourth Grafana dashboard: business overview through a read-only role | Cross-checks the product's numbers; useful internal view |
+| 2026-10-08 | **Cut:** benchmark and hosted Grafana | Time; both were in the planned cut order (§12), ahead of anything core |

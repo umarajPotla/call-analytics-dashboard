@@ -47,5 +47,5 @@ Commands assume Docker Compose (`docker compose exec api …`). Without Docker, 
 | Apply migrations | `docker compose exec api node dist/migrate.js` |
 | Recheck and repair rollups | `docker compose exec api node dist/rebuild-rollups.js --since 2026-10-01T00:00:00Z` |
 | Offline evals (CI gate) | `pnpm eval` |
-| Live evals against the configured model | `pnpm eval -- --live --runs 3 --record` |
+| Live evals against the configured model | `pnpm eval --live --runs 3 --record` |
 | Trigger a traffic spike (demo) | `curl -XPOST localhost:8080/api/v1/dev/spike -H 'content-type: application/json' -d '{"accountId":"<id>"}'` |
