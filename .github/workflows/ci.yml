@@ -15,12 +15,12 @@ permissions:
 jobs:
   check:
     name: Lint, typecheck, unit tests, evals
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -32,7 +32,7 @@ jobs:
 
   integration:
     name: Integration tests (Postgres)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
       postgres:
@@ -43,21 +43,21 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/calls_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calls/api exec vitest run --project integration
 
   e2e:
     name: Docker image + end-to-end smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with: { node-version-file: .nvmrc, cache: pnpm }
       - name: Build and start the stack exactly as a reviewer would
         run: docker compose up --build --detach --wait --wait-timeout 180
@@ -66,9 +66,22 @@ jobs:
       - name: Playwright smoke test
         run: pnpm --filter @calls/web e2e
         env: { E2E_BASE_URL: "http://localhost:8080" }
+      - name: Observability stack (alert rules load, Prometheus scrapes, Grafana provisions)
+        run: |
+          docker compose --profile observability up --detach prometheus grafana
+          retry() { for i in $(seq 1 30); do if eval "$1"; then return 0; fi; sleep 3; done; echo "FAILED: $1"; return 1; }
+          retry "curl -sf localhost:9090/api/v1/rules | jq -e '[.data.groups[].rules[]] | length == 6' >/dev/null"
+          retry "curl -sf 'localhost:9090/api/v1/query?query=up%7Bjob%3D%22api%22%7D' | jq -e '.data.result[0].value[1] == \"1\"' >/dev/null"
+          retry "curl -sf 'localhost:3000/api/search?tag=call-analytics' | jq -e 'length == 4' >/dev/null"
+          retry "curl -sf -u admin:admin localhost:3000/api/datasources | jq -e 'length == 2' >/dev/null"
+          echo "Prometheus: 6 alert rules, API scraped. Grafana: 4 dashboards, 2 data sources."
+      - name: Screenshots
+        run: pnpm --filter @calls/web exec node e2e/screenshots.mjs screenshots
+      - uses: actions/upload-artifact@v5
+        with: { name: screenshots, path: apps/web/screenshots, retention-days: 14 }
       - name: Logs on failure
         if: failure()
-        run: docker compose logs --no-color --tail 300
-      - uses: actions/upload-artifact@v4
+        run: docker compose --profile observability logs --no-color --tail 300
+      - uses: actions/upload-artifact@v5
         if: failure()
         with: { name: playwright-report, path: apps/web/playwright-report, retention-days: 7 }
