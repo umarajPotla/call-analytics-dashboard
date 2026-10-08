@@ -21,6 +21,8 @@ export class PgListener {
     private readonly onReconnect: () => void = () => {},
   ) {}
 
+  private reconnecting = false;
+
   async start(): Promise<void> {
     const client = new pg.Client({ connectionString: this.connectionString });
     client.on("notification", (msg) => {
@@ -36,21 +38,33 @@ export class PgListener {
       this.log.warn({ err }, "listener: connection error");
       void this.reconnect();
     });
-    await client.connect();
-    await client.query(`LISTEN ${NOTIFY_CHANNEL}`);
+    try {
+      await client.connect();
+      await client.query(`LISTEN ${NOTIFY_CHANNEL}`);
+    } catch (err) {
+      await client.end().catch(() => {}); // don't leak a half-open connection
+      throw err;
+    }
     this.client = client;
     this.attempt = 0;
   }
 
   private async reconnect(): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.reconnecting) return; // one reconnect loop at a time, however many errors fire
+    this.reconnecting = true;
     await this.client?.end().catch(() => {});
     this.client = undefined;
     const delay = Math.min(30_000, 500 * 2 ** this.attempt++) * (0.5 + Math.random() / 2);
     setTimeout(() => {
       this.start()
-        .then(() => this.onReconnect()) // clients may have missed updates: tell them to resync
-        .catch(() => void this.reconnect());
+        .then(() => {
+          this.reconnecting = false;
+          this.onReconnect(); // clients may have missed updates: tell them to resync
+        })
+        .catch(() => {
+          this.reconnecting = false;
+          void this.reconnect();
+        });
     }, delay);
   }
 

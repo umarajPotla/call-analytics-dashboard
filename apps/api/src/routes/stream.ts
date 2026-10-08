@@ -34,18 +34,24 @@ export const streamRoutes: FastifyPluginAsyncZod<Deps> = async (app, { accounts,
       const clientId = hub.attach(account.id, reply.raw, campaignIds);
 
       if (Number.isFinite(lastId) && lastId > 0) {
-        const { items, truncated } = await calls.changesSince(
-          account.id,
-          Math.max(0, lastId - REPLAY_OVERLAP),
-          REPLAY_LIMIT,
-        );
-        if (truncated) hub.sendTo(clientId, "event: reset\ndata: {}\n\n");
-        else {
-          const wanted = campaignIds ? new Set(campaignIds) : null;
-          for (const item of items) {
-            if (!wanted || wanted.has(item.campaign.id))
-              hub.sendTo(clientId, formatUpdate(item.seq ?? lastId, item));
+        try {
+          const { items, truncated } = await calls.changesSince(
+            account.id,
+            Math.max(0, lastId - REPLAY_OVERLAP),
+            REPLAY_LIMIT,
+          );
+          if (truncated) hub.sendTo(clientId, "event: reset\ndata: {}\n\n");
+          else {
+            const wanted = campaignIds ? new Set(campaignIds) : null;
+            for (const item of items) {
+              if (!wanted || wanted.has(item.campaign.id))
+                hub.sendTo(clientId, formatUpdate(item.seq ?? lastId, item));
+            }
           }
+        } catch (err) {
+          // The response is already hijacked, so no error page: tell the client to refetch instead of missing updates.
+          req.log.warn({ err }, "stream: replay failed");
+          hub.sendTo(clientId, "event: reset\ndata: {}\n\n");
         }
       }
     },

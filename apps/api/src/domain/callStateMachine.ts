@@ -17,8 +17,6 @@ export type Decision =
 
 export type RejectReason = "answered_after_missed" | "missed_after_answered" | "converted_after_missed";
 
-export const STATUS_RANK: Record<CallStatus, number> = { ringing: 0, connected: 1, missed: 1, converted: 2 };
-
 export function transition(current: CallStatus | null, event: EventType): Decision {
   switch (event) {
     case "call.started":

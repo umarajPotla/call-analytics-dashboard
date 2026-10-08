@@ -1,4 +1,4 @@
-import { type Fact, type Insight, SOURCE_LABELS } from "@calls/shared";
+import type { Fact, Insight } from "@calls/shared";
 
 /**
  * Deterministic insights rendered straight from facts. Used when no LLM is configured, when the model is down
@@ -65,5 +65,3 @@ function render(f: Fact): Pick<Insight, "title" | "body" | "action"> {
       };
   }
 }
-
-export const sourceLabel = (s: keyof typeof SOURCE_LABELS) => SOURCE_LABELS[s];

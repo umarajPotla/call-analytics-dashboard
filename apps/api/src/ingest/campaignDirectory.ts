@@ -3,9 +3,13 @@ import type { Db } from "../db/pool";
 
 export type CampaignInfo = CampaignRef & { accountId: string };
 
-/** In-memory lookup of campaigns (small, rarely changes). Reloads on a miss so new campaigns are picked up. */
+/**
+ * In-memory lookup of campaigns (small, rarely changes). Reloads on a miss so new campaigns are picked up, but
+ * at most once per 30 s: ingest is unauthenticated in the demo, and unknown ids must not cost a table scan each.
+ */
 export class CampaignDirectory {
   private byId = new Map<string, CampaignInfo>();
+  private lastReload = 0;
 
   constructor(private readonly db: Db) {}
 
@@ -19,12 +23,10 @@ export class CampaignDirectory {
   }
 
   async get(id: string): Promise<CampaignInfo | undefined> {
-    if (!this.byId.has(id)) await this.load();
-    return this.byId.get(id);
-  }
-
-  /** Synchronous lookup for hot paths after load(). */
-  peek(id: string): CampaignInfo | undefined {
+    if (!this.byId.has(id) && Date.now() - this.lastReload > 30_000) {
+      this.lastReload = Date.now();
+      await this.load();
+    }
     return this.byId.get(id);
   }
 
