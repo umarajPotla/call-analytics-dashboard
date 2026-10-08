@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck, unit tests, evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm --filter @calls/shared test && pnpm --filter @calls/api test:unit && pnpm --filter @calls/web test
+      - name: Insights evals (offline, deterministic)
+        run: pnpm --filter @calls/api eval
+
+  integration:
+    name: Integration tests (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: calls_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/calls_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calls/api exec vitest run --project integration
+
+  e2e:
+    name: Docker image + end-to-end smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - name: Build and start the stack exactly as a reviewer would
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calls/web exec playwright install --with-deps chromium
+      - name: Playwright smoke test
+        run: pnpm --filter @calls/web e2e
+        env: { E2E_BASE_URL: "http://localhost:8080" }
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 300
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: apps/web/playwright-report, retention-days: 7 }

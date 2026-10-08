@@ -1,0 +1,36 @@
+# Render Blueprint for the hosted demo (free web service + Neon free Postgres).
+# Secrets are marked sync: false: Render asks for them when the Blueprint is applied, and they never live in git.
+services:
+  - type: web
+    name: call-analytics
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /readyz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL # Neon pooled connection string (…-pooler…), sslmode=require
+        sync: false
+      - key: DATABASE_URL_DIRECT # Neon direct (non-pooled) string: LISTEN/NOTIFY needs a real session
+        sync: false
+      - key: SIM_ENABLED
+        value: "true"
+      - key: SIM_BACKFILL_DAYS
+        value: "14"
+      - key: DEV_TOOLS # shows the "Simulate spike" demo button
+        value: "true"
+      - key: EVENT_RETENTION_DAYS
+        value: "4"
+      - key: DATA_RETENTION_DAYS
+        value: "35"
+      # AI insights (optional). Without a key the dashboard uses the rules-based template.
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: LLM_MODEL
+        value: gemini-3.5-flash
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_TIMEOUT_MS
+        value: "8000"
+      - key: INSIGHTS_LLM_BUDGET_PER_HOUR
+        value: "20"
