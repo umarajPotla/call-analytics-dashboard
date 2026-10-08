@@ -7,9 +7,13 @@ pg.types.setTypeParser(1700, (v) => Number.parseFloat(v));
 export type Db = pg.Pool;
 export type DbClient = pg.PoolClient;
 
+/**
+ * No session settings on purpose: every query names its time zone explicitly (date_trunc(..., 'UTC'),
+ * `AT TIME ZONE tz`), so results never depend on the server's zone, and the pool works unchanged behind
+ * transaction-mode poolers such as Neon's PgBouncer, which reject startup `options` and don't keep SETs.
+ */
 export function createPool(connectionString: string, max = 10): Db {
-  // Every session runs in UTC so date_trunc/bucketing never depends on the server's zone.
-  return new pg.Pool({ connectionString, max, options: "-c TimeZone=UTC" });
+  return new pg.Pool({ connectionString, max });
 }
 
 /** Run fn inside a transaction; commits on success, rolls back and rethrows on error. */

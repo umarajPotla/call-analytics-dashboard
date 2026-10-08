@@ -26,8 +26,14 @@ const log = createLogger(config.LOG_LEVEL);
 
 const db = createPool(config.DATABASE_URL);
 await waitForDatabase(db);
-const applied = await migrate(db);
-if (applied.length) log.info({ applied }, "migrations applied");
+{
+  // Migrations hold a session-level advisory lock, so they need a real session: on Neon that is the direct
+  // (non-pooled) URL. Locally both URLs are the same database.
+  const direct = config.DATABASE_URL_DIRECT ? createPool(config.DATABASE_URL_DIRECT, 1) : db;
+  const applied = await migrate(direct);
+  if (applied.length) log.info({ applied }, "migrations applied");
+  if (direct !== db) await direct.end();
+}
 await seedReferenceData(db);
 
 const campaigns = new CampaignDirectory(db);
