@@ -6,7 +6,9 @@ import type {
   VolumeResponse,
 } from "@calls/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CATALOG } from "../../src/catalog";
 import type { Db } from "../../src/db/pool";
+import { rebuildRollups } from "../../src/db/rollups";
 import { bulkLoadHistory } from "../../src/simulator/backfill";
 import { type TestApp, testApp } from "../helpers/app";
 import { freshDb } from "../helpers/db";
@@ -87,6 +89,39 @@ describe("read API", () => {
     expect(sum(hourly.body)).toBe(summary.body.totalCalls.value);
     expect(summary.body.totalCalls.value ?? 0).toBeGreaterThan(1000);
     expect(hourly.headers["cache-control"]).toBe("private, max-age=5");
+  });
+
+  it("handles DST weeks: 25-hour local days, and calls in the repeated hour land on the right local day", async () => {
+    // US clocks fall back on Sun Nov 1, 2026 at 2:00 PDT: 1:00–2:00 local happens twice.
+    const at = [
+      "2026-10-31T06:30:00Z", // Fri Oct 30, 23:30 PDT
+      "2026-11-01T06:30:00Z", // Sat Oct 31, 23:30 PDT
+      "2026-11-01T08:30:00Z", // Sun Nov 1, 01:30 PDT (first time)
+      "2026-11-01T09:30:00Z", // Sun Nov 1, 01:30 PST (second time)
+      "2026-11-02T07:30:00Z", // Sun Nov 1, 23:30 PST
+    ];
+    for (const ts of at) {
+      await db.query(
+        `INSERT INTO calls (id, account_id, campaign_id, status, started_at) VALUES (gen_random_uuid(), $1, $2, 'missed', $3)`,
+        [ACME.id, ACME.campaigns[0]!.id, ts],
+      );
+    }
+    await rebuildRollups(db, ACME.id, new Date("2026-10-30T00:00:00Z"), new Date("2026-11-03T00:00:00Z"));
+
+    const range = "from=2026-10-26&to=2026-11-01";
+    const hourly = await get<VolumeResponse>(`${A}/metrics/volume?${range}&granularity=hour`);
+    const daily = await get<VolumeResponse>(`${A}/metrics/volume?${range}&granularity=day`);
+    expect(hourly.body.series).toHaveLength(7 * 24 + 1); // Nov 1 has 25 hours
+    expect(hourly.body.series.reduce((a, p) => a + p.total, 0)).toBe(5);
+    const byDay = Object.fromEntries(daily.body.series.map((p) => [p.bucket, p.total]));
+    expect(byDay).toMatchObject({ "2026-10-30": 1, "2026-10-31": 1, "2026-11-01": 3 });
+
+    // UK clocks fall back on Sun Oct 25, 2026.
+    const london = CATALOG.find((a) => a.timezone === "Europe/London")!;
+    const uk = await get<VolumeResponse>(
+      `/api/v1/accounts/${london.id}/metrics/volume?from=2026-10-19&to=2026-10-25&granularity=hour`,
+    );
+    expect(uk.body.series).toHaveLength(7 * 24 + 1);
   });
 
   it("filters by outcome and campaign", async () => {
