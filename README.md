@@ -1,6 +1,8 @@
 # Real-time call analytics
 
-A real-time call analytics dashboard for a marketing manager. Calls come in from tracking numbers on each campaign. The dashboard shows them **live as they happen**, call volume **by hour and by day**, **conversion rate by campaign source**, and a short **"what changed"** summary written by an AI model. Every number in that summary is checked against SQL facts before it is shown.
+A real-time call analytics dashboard for a marketing manager. Calls come in from tracking numbers on each campaign. The dashboard shows them **live as they happen**, call volume **by hour and by day**, **conversion rate by campaign source**, and a short **"what changed"** summary written by an AI model. Every number and every up/down in that summary is checked against SQL facts before it is shown.
+
+In Invoca's terms: a *conversion* is a signal (a sale, booking or quote) tied to the campaign and channel that drove the call, and the "what changed" panel is close in spirit to Smart Alerts for missed calls and conversion drops. It says what to check rather than claiming why something happened.
 
 [![CI](https://github.com/umarajPotla/call-analytics-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/umarajPotla/call-analytics-dashboard/actions/workflows/ci.yml)
 
@@ -65,8 +67,9 @@ Each assumption says what changes if it's wrong, and most are a one-function cha
    Charts read a few hundred rollup rows instead of scanning calls. The cost is a second copy that could drift. A property-based test, a continuous drift check with an alert, and a repair tool cover that. I chose no Kafka, no Redis and no OLAP store: at this scale each would add a moving part without a measured need. DESIGN §11 lists what breaks first at 500 customers and the order I'd fix it in.
 2. **Ingest is safe to retry and tolerates any arrival order.** Every event has an id, so a duplicate is a no-op. A rank-based state machine only moves a call forward, so out-of-order events are no-ops too. The simulator deliberately sends duplicates and reordered events to prove this live.
 3. **Live updates use Server-Sent Events fed by Postgres `LISTEN/NOTIFY`, not WebSockets.** Updates only flow one way (server to browser), and SSE gives automatic reconnect and replay over plain HTTP. Charts refetch at most once every 5 s rather than recomputing metrics in the browser, so there is one source of truth.
-4. **Comparisons are like for like.** "This week so far" is compared with last week up to the same local time, and last week's conversions are counted as they were known at that point. Running the first version showed why this matters: every week looked worse than the last, because today is partial and recent calls haven't collected their late conversions yet.
-5. **The AI feature is grounded and measurable.** SQL computes every number. The model only chooses and phrases the notable facts. Guardrails reject any number that isn't in the facts an insight cites, and a rules-based template takes over if the model fails or is unavailable.
+4. **Comparisons are like for like,** in both the KPI tiles and the AI insights. "This week so far" is compared with last week up to the same local time, and last week's conversions are counted as they were known at that point. Running the first version showed why this matters: every week looked worse than the last, because today is partial and recent calls haven't collected their late conversions yet.
+5. **The AI feature is grounded and measurable.** SQL computes every number. The model only chooses and phrases the notable facts. Guardrails reject any number that isn't in the facts an insight cites, any up/down that contradicts them, and any channel named without being cited. A rules-based template takes over if the model fails or is unavailable.
+   - **Evidence, not hope:** a live eval of a small local model (llama3.2:3b) found answers with every number right and the direction wrong ("Meta calls up 34%" for a 34% drop). That is why the direction and mention checks exist. The recorded answers are replayed in CI, where the guardrails reject every one of them.
    - **Noise control:** "notable" requires z ≥ 3, not 2. About 50 facts are tested per view, and at z ≥ 2 the first version reported pure noise.
    - **Platform pieces:** a provider-agnostic gateway (timeouts, retry, circuit breaker, cost meter), versioned prompts, caching, a per-account budget, and an eval suite that runs in CI.
 6. **Operable from day one.** Prometheus metrics, four Grafana dashboards and six alert rules are provisioned from the repo, each alert with a runbook entry.
@@ -117,7 +120,9 @@ docs/            design, diagrams, runbook
 ## Testing and quality
 
 ```bash
-pnpm test        # 100 tests: unit, property-based, integration against real Postgres, SSE over real HTTP
+pnpm test        # 107 tests: unit, property-based, integration against real Postgres, SSE over real HTTP
+                 # (integration tests use TEST_DATABASE_URL, default postgres://postgres@127.0.0.1:5432/calls_test,
+                 #  and drop that database's schema)
 pnpm eval        # AI evals: guardrail probes, template answers, replay of recorded model answers
 pnpm e2e         # Playwright against a running stack
 pnpm bench       # 9.7M-call benchmark (needs BENCH_DATABASE_URL; drops that database's schema)
@@ -131,7 +136,7 @@ The tests cover:
 - **Live feed:** push after commit, replay on reconnect, filtering.
 - **AI insights:** the guardrails against hallucinated numbers, unknown or noisy citations and format failures; the gateway's retry and circuit breaker; the fallback paths.
 
-**CI** ([workflow](.github/workflows/ci.yml)) runs on every push:
+**CI** ([workflow](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 1. lint, typecheck, unit tests and evals
 2. integration tests against a Postgres service
 3. builds the Docker image and starts the stack with `docker compose up`, exactly as a reviewer would, then runs the Playwright test against it
@@ -145,6 +150,7 @@ SQL facts (like-for-like, notable only if big enough AND z ≥ 3)
   → cache (15-min window per range + content hash of the facts) · single-flight · per-account budget
   → LLM via an OpenAI-compatible gateway (timeout, retry, circuit breaker, token and cost metering)
   → guardrails: schema · cited facts exist and are notable · every number appears in the cited facts
+                · up/down agrees with the cited facts · every channel named is cited
   → one repair round with the errors fed back → otherwise the rules-based template
 ```
 
@@ -158,7 +164,8 @@ I built this with an AI coding assistant as a pair programmer, the way I'd want 
 - **Design first:** the assumptions, metric definitions, state machine and decisions were written down before any code ([DESIGN.md](docs/DESIGN.md)).
 - **Small, reviewed slices:** code was generated module by module, reviewed, and committed in small described commits.
 - **Tests as the contract:** every risky behaviour is pinned by tests, and CI runs the full stack.
-- **Run it and question it:** the most important corrections came from running the system and asking whether the numbers were honest, not from the generated code: like-for-like comparisons, the stricter notability threshold, ranking insights in a common unit, and the two-level cache. They are listed in the [change log](docs/DESIGN.md#15-change-log).
+- **Run it and question it:** the most important corrections came from running the system and asking whether the numbers were honest, not from the generated code: like-for-like comparisons, the stricter notability threshold, ranking insights in a common unit, and the direction guardrail found by a live eval on a local model.
+- **Fresh-eyes review:** before submitting, a separate AI agent that hadn't seen the work reviewed the code against these docs. It found real bugs (a live-feed regression, KPI tiles that weren't like for like, feedback that could point at regenerated text) and claims the code didn't back up. All are fixed and listed in the [change log](docs/DESIGN.md#15-change-log).
 
 Where I'd look hardest in a review:
 - The SSE hub under real load. Backpressure is implemented and tested functionally, but not load-tested.
@@ -168,5 +175,5 @@ Where I'd look hardest in a review:
 ## Known limitations
 
 - Authentication is stubbed: every request acts as a demo user. Tenant scoping is real.
-- Rollups are hourly, so time zones with half-hour offsets (India, for example) get approximate daily totals (assumption A9).
+- Rollups are hourly, so for time zones with half-hour offsets (India, for example) day boundaries are approximate to the hour (assumption A9).
 - The hosted demo runs on free tiers: the first request after 15 minutes idle takes about 30 s while the host wakes up and the simulator catches up.

@@ -23,6 +23,8 @@ A real-time call analytics dashboard for a **marketing manager**. It answers fou
 
 Everything runs with one command (`docker compose up`) and costs $0.
 
+**How this maps to Invoca's product.** In Invoca's terms, a *conversion* here is a signal (a sale, booking or quote) tied to the *campaign* and channel that drove the call, the live feed is the real-time view, and the "What changed" panel is close in spirit to Smart Alerts that flag missed calls and conversion drops. Two deliberate differences: every number and direction it states is checked against SQL facts before it's shown, and it suggests what to check rather than claiming *why* something happened, because explaining why needs conversation data, which is out of scope. Pushing those insights to marketers as alerts is a natural next step; the alerts built here are for operators.
+
 ## 2. Goals and non-goals
 
 | Goals | Non-goals (intentionally left out) |
@@ -50,7 +52,7 @@ Everything runs with one command (`docker compose up`) and costs $0.
 | A7 | Freshness targets: live feed **≤ 3 s p95** end to end; charts **≤ 10 s** | Tighter targets mean pushing aggregates instead of throttled refetch (see D7) |
 | A8 | Each call has **one** campaign (single-touch, from the tracking number) | Multi-touch needs a call↔touchpoint table and weighting rules |
 | A9 | Account time zones have **whole-hour UTC offsets** for accurate daily totals | Move rollups to 15-minute buckets (4× rows) |
-| A10 | Demo scale: **3 accounts**, ~2–6k calls/day each, 14 days of history. Performance is benchmarked separately at **~10M calls / 500 accounts** | — |
+| A10 | Demo scale: **3 accounts**, ~1.5–4k calls/day each, 14 days of history. Performance is benchmarked separately at **~10M calls / 500 accounts** | — |
 | A11 | **Synthetic data only.** No real PII; caller numbers are masked at ingest | Real data needs encryption at rest, access controls, retention policies |
 | A12 | Reviewers run it with **Docker only** (macOS/Linux). The hosted link is a convenience and may cold-start | Add a no-Docker path (`pnpm dev` + local Postgres) |
 | A13 | Free LLM tiers are acceptable **for synthetic, aggregate data only** | Production needs enterprise / zero-retention terms or a self-hosted model |
@@ -119,7 +121,7 @@ Format: **Decision** → why → trade-off I accept → when I'd revisit.
 **D1 — TypeScript end to end.** One language across client, server and shared contracts. Zod schemas generate both runtime validation and the OpenAPI spec, so the API contract can't drift. Node.js 24 is the supported LTS line (to April 2028); I'd move to Node 26 after it enters LTS in late October 2026.
 *Trade-off:* Invoca's core backend is Rails. Inside an existing codebase I'd follow house conventions (Rails, GraphQL/Apollo). For a 3-day greenfield build I chose the stack I can explain line by line.
 
-**D2 — Monorepo with hexagonal-lite layering.** The domain logic (`callStateMachine`, `metrics`, `timeBuckets`, insight `facts`) is pure and framework-free. Routes are thin adapters. SQL lives only in repositories. Another engineer can find and change one concern without reading the whole system.
+**D2 — Monorepo with hexagonal-lite layering.** The domain logic (the call state machine, metric definitions in `packages/shared`, the insight fact rules and guardrails) is pure and framework-free and unit-tested. Routes are thin adapters with no SQL. SQL lives in the repositories (`read/`) and in the services that own a transaction (ingest, insights). Another engineer can find and change one concern without reading the whole system.
 
 **D3 — PostgreSQL only.** Transactions make ingest atomic. `LISTEN/NOTIFY` covers fan-out at this scale. Window functions and `generate_series` cover the analytics.
 *Rejected:* a time-series extension (TimescaleDB's continuous aggregates aren't available on the managed host), a separate OLAP store, Redis. Each would add a moving part without a measured need.
@@ -142,7 +144,7 @@ Format: **Decision** → why → trade-off I accept → when I'd revisit.
 - Heartbeats every 20 s.
 - A bounded per-client queue: a slow client is disconnected and resyncs, so it never affects others.
 - Graceful drain on deploy.
-- Fallback: polling with the same cursor (`since=<seq>`).
+- Fallback: polling `GET …/calls/changes?afterSeq=<seq>` with the same cursor. The client keeps the cursor from the stream's event ids and the endpoint's `latestSeq`, and the first page of calls returns the sequence it was read at (`asOfSeq`), so nothing falls between the page and the stream.
 
 Known subtlety: sequence numbers are assigned at insert, not commit, so replay uses a small overlap window and the client dedupes.
 
@@ -198,17 +200,20 @@ Known subtlety: sequence numbers are assigned at insert, not commit, so replay u
    - rates: |Δ| ≥ 2 points, ≥ 30 resolved calls in both periods, and a two-proportion |z| ≥ 3
    - *Why z ≥ 3, not the textbook 2:* one view tests ~50 facts at once. At z ≥ 2 that's ~2 false alarms per view from noise alone; at z ≥ 3 it's ~0.1 (a Bonferroni-style correction). I found this by running the first version against the simulator: it confidently reported changes that were pure noise.
 2. **Selection.** Every fact's impact is in one unit, **estimated conversions gained or lost** (Δcalls × conversion rate, Δmissed × conversion rate of answered calls, Δrate × resolved calls), so a volume spike and a conversion drop can be ranked fairly. Only notable facts reach the model, the top 8 by impact, so the prompt stays small and the cost bounded. If nothing is notable, the model is not called at all.
-3. **Generation.** A versioned prompt (`prompts/insights.v1.md`) asks for JSON matching a Zod schema: `{ insights: [{ title ≤ 80 chars, body ≤ 240 chars, factIds[1–4], action? }] }`, at most 3 insights. The model sees only ids, labels and pre-formatted numbers: aggregates, never calls or callers.
+3. **Generation.** A versioned prompt (`prompts/insights.v2.md`; v1 is kept for comparison) asks for JSON matching a Zod schema: `{ insights: [{ title ≤ 80 chars, body ≤ 240 chars, factIds[1–4], action? }] }`, at most 3 insights. The model sees only ids, labels, each fact's direction and pre-formatted numbers: aggregates, never calls or callers.
 4. **Guardrails** (deterministic, `guardrails.ts`).
    - The output must parse as JSON (a Markdown fence is tolerated) and match the schema.
    - Every cited fact must exist **and be notable**.
    - **Every number in the text must appear in the facts that insight cites** (normalized: `1,234` = `1234`, `20.0%` = `20%`).
+   - **Directions must match:** "up"/"down" words must agree with the directions of the cited facts, facts that moved in different directions can't be lumped into one claim, and a fact's change figure can't sit next to the opposite direction word.
+   - **Mentions must be cited:** every campaign or source named in the text must be one the insight cites (whole-name matching, so "Brand search" isn't found inside "Non-brand search").
+   - *Why the last two exist:* the first live eval (llama3.2:3b, prompt v1, on a MacBook Air) produced answers where **every number was right and the story was wrong**: "Meta calls up 34%" for a 34% drop, or "conversion decreased across Google Ads, Brand search and Meta" when Meta rose. Number grounding alone let them through. The recorded answers are now replayed in CI against the guardrails, which reject all of them (9 of 23 recorded answers; see `apps/api/evals/`).
    - On failure: one repair round with the exact errors fed back, then **fallback** to a deterministic template rendered from the same facts (which passes the guardrails by construction, and a test proves it).
 5. **Caching and cost control.**
    - A **15-minute freshness window** per (account, range, prompt version, model): live data moves every second, so without it the facts would never be identical twice. Insights are **never regenerated per live event**.
    - A **content-addressed key** = hash(prompt version, model, facts): identical facts never pay for a second generation.
    - **Single-flight** coalescing, a **per-account hourly budget** of model calls (then the template answers), and template answers given because the model was down are cached for only 60 s so the model is retried soon.
-6. **Feedback.** 👍/👎 on each insight is stored with the prompt version, the model, and a snapshot of the insight and the facts it cited, exactly as the user saw them, so a thumbs-down can become an eval case without guesswork.
+6. **Feedback.** Every generation is stored **immutably** with its own id. 👍/👎 refers to that id and stores the prompt version, the model, and a snapshot of the insight and the facts it cited, exactly as the user saw them, so a thumbs-down can become an eval case without guesswork.
 
 **LLM gateway.** A small `LlmProvider` interface with a single **OpenAI-compatible adapter**, configured by environment variables (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`). The `InsightGenerator` (facts in, insights out, no database) is the exact code path that both production and the eval harness run.
 
@@ -220,7 +225,7 @@ Known subtlety: sequence numbers are assigned at insert, not commit, so replay u
 | CI | **Recorded provider** (fixtures) | Deterministic, free, no network |
 | Disabled | **Template provider** | Feature still works with no LLM at all |
 
-The gateway also owns **timeouts** (8 s), **one retry** on transient errors (5xx, 429, network; not on timeouts, because the user already waited), a **circuit breaker** (open after 5 failures in 60 s, one trial request after 30 s), and **metering** (latency, tokens, estimated cost). Adding a second AI feature means reusing the gateway, the prompt files, the eval harness and the guardrail helpers. That's the platform point.
+The gateway also owns **timeouts** (8 s hosted; 20 s by default for a local model, which loads on first use), **one retry** on transient errors (5xx, 429, network; not on timeouts, because the user already waited), a **circuit breaker** (open after 5 failures in 60 s, one trial request after 30 s), and **metering** (latency, tokens, estimated cost). Adding a second AI feature means reusing the gateway, the prompt files, the eval harness and the guardrail helpers. That's the platform point.
 
 **Evals** (`apps/api/src/insights/eval/`, run with `pnpm eval`)
 
@@ -238,8 +243,16 @@ The gateway also owns **timeouts** (8 s), **one retry** on transient errors (5xx
 | Template fallbacks when the model is asked | ≤ 10% |
 | Latency p50/p95, tokens per case | Reported, not gated |
 
-- **CI** runs the probes, the template answers and a **replay of recorded real model answers** on every push: free, deterministic, no network.
+- **CI** runs the probes, the template answers, and re-checks **every recorded real model answer against today's guardrails** ("would this answer reach a user now?"), then scores the accepted ones independently: free, deterministic, no network.
 - **Live runs** (`pnpm eval --live --runs 3 --record`) run the cases against the configured model, write a results file to `apps/api/evals/results/`, and record the raw answers for replay in CI.
+
+**Live results so far** (7 cases × 3 runs; quiet weeks never call the model):
+
+| Model · prompt | Model calls | First try OK | Repaired | Template fallback | Key findings covered | Latency p50 / p95 |
+|---|---|---|---|---|---|---|
+| llama3.2:3b (local, MacBook Air) · v1, number checks only | 18 | 13 | 3 | 2 | 98% | 4.0 s / 11.6 s |
+
+Re-checked against today's guardrails, 14 of those 23 raw answers would still reach a user. All 9 rejections are real problems: wrong or lumped-together directions, channels named without being cited, a body over the length limit, an invented number. That is exactly the failure mode prompt v2 and the two new checks target.
 
 **Telemetry.**
 - Metrics: generations by outcome (`ok`, `repaired`, `invalid`, `timeout`, `error`, `circuit_open`, `rate_limited`, `no_llm`, `no_signal`), guardrail rejections by check, LLM latency, tokens, estimated cost from a price table ($0 on free tiers, but the mechanism exists), cache hits (fresh / content / miss), and feedback.
@@ -269,11 +282,11 @@ The gateway also owns **timeouts** (8 s), **one retry** on transient errors (5xx
 | Integration | Vitest + real Postgres | Idempotency; late conversions; **tenant isolation**, even when asked for another tenant's campaign ids; keyset pagination; totals agree across endpoints; DST weeks (US and UK); like-for-like comparisons with late conversions; every query is independent of the session time zone |
 | API contract | Fastify `inject` | Validation with field paths, problem+json errors, range limits, OpenAPI document |
 | SSE | Integration (real HTTP) | Push after commit, `Last-Event-ID` replay of the current state, campaign filtering |
-| AI | Eval suite (`pnpm eval`) | Guardrail probes, template answers, replay of recorded model answers; live runs on demand |
+| AI | Eval suite (`pnpm eval`) | Guardrail probes (hallucinated numbers, wrong directions, uncited channels, format failures), template answers, every recorded real model answer re-checked against today's guardrails; live runs on demand |
 | E2E smoke | Playwright, against `docker compose up` | Loads, live feed connects, a traffic spike shows new calls, filters update the URL and survive reload, insights render |
 
-**CI (GitHub Actions, every push):** lint → typecheck → unit → evals → integration (Postgres service) → build the Docker image and start the stack with `docker compose` → Playwright smoke test → start Prometheus and Grafana and check that the alert rules load, the API is scraped and all dashboards are provisioned.
-**Benchmark** ([`benchmarks.md`](benchmarks.md), `pnpm bench`): 9.7M calls across 500 accounts. For an enterprise-sized account the 7-day hourly chart takes ~1 ms from the rollup vs ~64 ms aggregating raw calls (~56×). Ingest through the real service peaks at ~1.7k events/s on a 2-vCPU database: just above the 500-customer peak in §11, which is why batching projection is the next scaling step.
+**CI (GitHub Actions, every push to `main` and every pull request):** lint → typecheck → unit → evals → integration (Postgres service) → build the Docker image and start the stack with `docker compose` → Playwright smoke test → start Prometheus and Grafana and check that the alert rules load, the API is scraped and all dashboards are provisioned.
+**Benchmark** ([`benchmarks.md`](benchmarks.md), `pnpm bench`): 9.7M calls across 500 accounts. For an enterprise-sized account the 7-day hourly chart takes ~1 ms from the rollup vs ~65–70 ms aggregating raw calls (roughly 50× across runs). Ingest through the real service peaks at ~1.4–1.7k events/s on a 2-vCPU database: right at the 500-customer peak in §11, which is why batching projection is the next scaling step.
 
 ## 10. Security and privacy
 
@@ -326,6 +339,7 @@ Planned as three days with a kickoff on day 0; delivered in two without one.
 - **Small, reviewable slices:** code is generated one module at a time and reviewed as a teammate's PR would be, then committed in small, described commits.
 - **Tests as the contract:** the high-risk behaviour (idempotency, ordering, rollup reconciliation, tenant isolation, time zones, grounding) is pinned by tests, and CI runs the whole stack the way a reviewer would.
 - **Run it, look at it, question it:** several of the most important decisions in the change log came from running the system and noticing that a number was wrong or misleading, not from the generated code.
+- **Fresh-eyes review:** before submitting, a separate AI agent that hadn't seen the work reviewed the code against this document. Its findings, and what changed because of them, are in the change log.
 - **A running log:** the README says how AI was used and where to look hardest.
 
 ## 14. Questions I'd have asked at a kickoff
@@ -356,5 +370,9 @@ There was no kickoff call, so these are stated as assumptions (§3) and are the 
 | 2026-10-08 | Ingest returns **200 with an outcome per event** instead of 202 | The sender learns synchronously which events were duplicates, no-ops or rejected |
 | 2026-10-08 | Runs behind Neon's transaction-mode pooler: no session settings; direct URL for migrations and `LISTEN` (D14) | Poolers reject startup options and don't keep session state |
 | 2026-10-08 | Fourth Grafana dashboard: business overview through a read-only role | Cross-checks the product's numbers; useful internal view |
-| 2026-10-08 | Benchmark measured at 9.7M calls / 500 accounts ([`benchmarks.md`](benchmarks.md)) | Confirms the rollup design (~56× faster chart reads) and puts a number on the first ingest limit (~1.7k events/s per small database) |
+| 2026-10-08 | Benchmark measured at 9.7M calls / 500 accounts ([`benchmarks.md`](benchmarks.md)) | Confirms the rollup design (roughly 50× faster chart reads) and puts a number on the first ingest limit (~1.5k events/s per small database) |
+| 2026-10-08 | **Direction and mention guardrails**, prompt **v2** with explicit fact directions (§7) | The first live eval showed correct numbers with wrong directions; number grounding alone let them through |
+| 2026-10-08 | Every insight generation is **immutable**, with a separate freshness-window table; feedback refers to a generation id | An independent review found that a regeneration could overwrite the text a thumbs-down was about, and that ranges with identical facts overwrote each other's window |
+| 2026-10-08 | KPI tiles now compare like for like too (D8); "may still convert" marker based on now − 72 h, not the end of the range | Same review: only the insights used as-of comparisons, and the marker showed on ranges long finished |
+| 2026-10-08 | Compose publishes Postgres on `127.0.0.1:5433` | 5432 clashes with a Postgres already running on a reviewer's machine |
 | 2026-10-08 | **Cut:** hosted Grafana | Time; first in the planned cut order (§12). Grafana runs locally with one command |
