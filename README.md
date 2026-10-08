@@ -10,6 +10,7 @@ A real-time call analytics dashboard for a marketing manager. Calls come in from
 - [Design and decisions](docs/DESIGN.md): assumptions, metric definitions, the decision records, the scaling path and the change log
 - [Architecture diagrams](docs/diagrams/architecture-diagrams.pdf)
 - [Runbook](docs/RUNBOOK.md)
+- [Benchmark](docs/benchmarks.md): 9.7M calls across 500 accounts
 - API reference at `/api/docs` once the app is running
 
 ## Run it
@@ -77,7 +78,7 @@ Each assumption says what changes if it's wrong, and most are a one-function cha
 - a server-side aggregate cache and pushed "stats changed" events (the first scaling bottleneck)
 - tracing
 - rate limits on ingest
-- the benchmark I cut for time
+- batching rollup deltas in projection workers once ingest nears its measured limit ([benchmark](docs/benchmarks.md))
 
 ## API
 
@@ -119,6 +120,7 @@ docs/            design, diagrams, runbook
 pnpm test        # 100 tests: unit, property-based, integration against real Postgres, SSE over real HTTP
 pnpm eval        # AI evals: guardrail probes, template answers, replay of recorded model answers
 pnpm e2e         # Playwright against a running stack
+pnpm bench       # 9.7M-call benchmark (needs BENCH_DATABASE_URL; drops that database's schema)
 pnpm lint && pnpm typecheck
 ```
 

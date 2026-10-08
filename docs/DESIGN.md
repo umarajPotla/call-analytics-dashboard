@@ -273,7 +273,7 @@ The gateway also owns **timeouts** (8 s), **one retry** on transient errors (5xx
 | E2E smoke | Playwright, against `docker compose up` | Loads, live feed connects, a traffic spike shows new calls, filters update the URL and survive reload, insights render |
 
 **CI (GitHub Actions, every push):** lint → typecheck → unit → evals → integration (Postgres service) → build the Docker image and start the stack with `docker compose` → Playwright smoke test → start Prometheus and Grafana and check that the alert rules load, the API is scraped and all dashboards are provisioned.
-**Benchmark:** cut for time (see the change log). The scaling claims in §11 are reasoned, not measured.
+**Benchmark** ([`benchmarks.md`](benchmarks.md), `pnpm bench`): 9.7M calls across 500 accounts. For an enterprise-sized account the 7-day hourly chart takes ~1 ms from the rollup vs ~64 ms aggregating raw calls (~56×). Ingest through the real service peaks at ~1.7k events/s on a 2-vCPU database: just above the 500-customer peak in §11, which is why batching projection is the next scaling step.
 
 ## 10. Security and privacy
 
@@ -315,9 +315,9 @@ Planned as three days with a kickoff on day 0; delivered in two without one.
 | When | Delivered |
 |---|---|
 | Day 1 | Design and assumptions; schema, state machine and idempotent ingest with property tests; simulator; read APIs; SSE live feed; AI insights with guardrails and evals; the React dashboard |
-| Day 2 | Docker image and Compose stack; Prometheus alerts and Grafana dashboards as code; CI that runs the stack end to end; DST and like-for-like tests; diagrams, runbook, README; hosted demo |
+| Day 2 | Docker image and Compose stack; Prometheus alerts and Grafana dashboards as code; CI that runs the stack end to end; DST and like-for-like tests; benchmark; diagrams, runbook, README; hosted demo |
 
-**Cut order, as planned:** hosted Grafana → live LLM on the hosted demo (the template fallback stays) → benchmark → E2E tests. **Cut:** hosted Grafana and the benchmark.
+**Cut order, as planned:** hosted Grafana → live LLM on the hosted demo (the template fallback stays) → benchmark → E2E tests. **Cut:** hosted Grafana only.
 **Never cut:** the four core features, ingest correctness tests, the decision summary, the diagram, the one-command run.
 
 ## 13. How I use AI tools while building
@@ -356,4 +356,5 @@ There was no kickoff call, so these are stated as assumptions (§3) and are the 
 | 2026-10-08 | Ingest returns **200 with an outcome per event** instead of 202 | The sender learns synchronously which events were duplicates, no-ops or rejected |
 | 2026-10-08 | Runs behind Neon's transaction-mode pooler: no session settings; direct URL for migrations and `LISTEN` (D14) | Poolers reject startup options and don't keep session state |
 | 2026-10-08 | Fourth Grafana dashboard: business overview through a read-only role | Cross-checks the product's numbers; useful internal view |
-| 2026-10-08 | **Cut:** benchmark and hosted Grafana | Time; both were in the planned cut order (§12), ahead of anything core |
+| 2026-10-08 | Benchmark measured at 9.7M calls / 500 accounts ([`benchmarks.md`](benchmarks.md)) | Confirms the rollup design (~56× faster chart reads) and puts a number on the first ingest limit (~1.7k events/s per small database) |
+| 2026-10-08 | **Cut:** hosted Grafana | Time; first in the planned cut order (§12). Grafana runs locally with one command |
