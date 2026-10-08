@@ -39,13 +39,16 @@ export function useLiveFeed({ accountId, campaignIds, outcomes, onChange, onRese
   }, [initial.data]);
 
   const apply = (incoming: FeedItem[]) => {
-    if (incoming.length === 0) return;
-    setItems((prev) => incoming.reduce((list, i) => mergeFeed(list, i, outcomes), prev));
+    // Only a call that is new or changed status counts as an update (replays and catch-ups repeat known states).
+    const known = new Map(itemsRef.current.map((i) => [i.callId, i.status]));
+    const changed = incoming.filter((i) => known.get(i.callId) !== i.status);
+    if (changed.length === 0) return;
+    setItems((prev) => changed.reduce((list, i) => mergeFeed(list, i, outcomes), prev));
     setUpdatedAt((prev) => {
       const next = new Map(prev);
       const t = Date.now();
-      for (const i of incoming) next.set(i.callId, t);
-      for (const [k, v] of next) if (t - v > 5_000) next.delete(k);
+      for (const i of changed) next.set(i.callId, t);
+      for (const [k, v] of next) if (t - v > 3_000) next.delete(k);
       return next;
     });
     callbacks.current.onChange();
