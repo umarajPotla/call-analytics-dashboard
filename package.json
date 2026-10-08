@@ -16,7 +16,10 @@
     "format": "biome format --write .",
     "db:migrate": "pnpm --filter @calls/api db:migrate",
     "eval": "pnpm --filter @calls/api eval",
-    "bench": "pnpm --filter @calls/api bench"
+    "e2e": "pnpm --filter @calls/web e2e",
+    "stack": "docker compose up --build",
+    "stack:full": "GRAFANA_URL=http://localhost:3000 docker compose --profile observability up --build",
+    "dashboards": "node ops/grafana/generate.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

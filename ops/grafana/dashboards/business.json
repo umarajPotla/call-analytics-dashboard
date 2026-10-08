@@ -1,0 +1,348 @@
+{
+  "uid": "business",
+  "title": "Call Analytics · Business overview (SQL)",
+  "description": "The same numbers as the React dashboard, straight from Postgres through a read-only role.",
+  "tags": [
+    "call-analytics"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Service health",
+      "type": "link",
+      "url": "/d/svc-health"
+    },
+    {
+      "title": "AI insights",
+      "type": "link",
+      "url": "/d/ai-insights"
+    },
+    {
+      "title": "Data correctness",
+      "type": "link",
+      "url": "/d/data-correctness"
+    },
+    {
+      "title": "Business overview",
+      "type": "link",
+      "url": "/d/business"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Calls",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS calls FROM calls WHERE account_id = '$account' AND $__timeFilter(started_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Conversion rate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) FILTER (WHERE status = 'converted')::float / nullif(count(*) FILTER (WHERE status <> 'ringing'), 0) AS rate\n       FROM calls WHERE account_id = '$account' AND $__timeFilter(started_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Missed calls",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) FILTER (WHERE status = 'missed') AS missed FROM calls WHERE account_id = '$account' AND $__timeFilter(started_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Answer rate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) FILTER (WHERE status IN ('connected','converted'))::float / nullif(count(*) FILTER (WHERE status <> 'ringing'), 0) AS rate\n       FROM calls WHERE account_id = '$account' AND $__timeFilter(started_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Calls per hour by status",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT bucket_start AS time, sum(converted) AS converted, sum(connected) AS connected, sum(missed) AS missed, sum(ringing) AS ringing\n       FROM call_stats_hourly WHERE account_id = '$account' AND $__timeFilter(bucket_start) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal"
+            },
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Conversion rate by source",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT c.source, sum(s.converted)::float / nullif(sum(s.connected + s.missed + s.converted), 0) AS conversion_rate\n       FROM call_stats_hourly s JOIN campaigns c ON c.id = s.campaign_id\n       WHERE s.account_id = '$account' AND $__timeFilter(s.bucket_start) GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Latest calls",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "callsdb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "callsdb"
+          },
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT k.started_at AS \"Started\", c.name AS \"Campaign\", k.status AS \"Status\", k.caller_masked AS \"Caller\", k.duration_sec AS \"Duration (s)\"\n       FROM calls k JOIN campaigns c ON c.id = k.campaign_id WHERE k.account_id = '$account' ORDER BY k.started_at DESC LIMIT 25"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "account",
+        "label": "Account",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "callsdb"
+        },
+        "query": "SELECT name AS __text, id::text AS __value FROM accounts ORDER BY name",
+        "refresh": 1,
+        "current": {}
+      }
+    ]
+  }
+}

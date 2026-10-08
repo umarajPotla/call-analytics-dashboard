@@ -1,0 +1,55 @@
+# Alert rules, reviewed like code. Grafana shows them under Alerting (data-source managed).
+groups:
+  - name: call-analytics
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: The API is not answering scrapes
+          runbook: docs/RUNBOOK.md#api-down
+
+      - alert: IngestLagHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(ingest_lag_seconds_bucket[5m]))) > 10
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "p95 time from call event to ingest is {{ $value | humanizeDuration }} (target < 10 s)"
+          runbook: docs/RUNBOOK.md#ingest-lag
+
+      - alert: RollupDrift
+        expr: max(rollup_drift_buckets) > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value }} hourly buckets disagree with a recount of calls: dashboard numbers are wrong"
+          runbook: docs/RUNBOOK.md#rollup-drift
+
+      - alert: HttpErrorRateHigh
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1e-9) > 0.02
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests fail with 5xx"
+
+      - alert: LiveFeedDropsHigh
+        expr: |
+          sum(rate(sse_disconnects_total{reason="slow"}[10m]))
+            / clamp_min(sum(rate(sse_disconnects_total[10m])), 1e-9) > 0.05
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: More than 5% of live-feed disconnects are slow clients being cut off
+
+      - alert: InsightsFallbackRateHigh
+        expr: |
+          sum(rate(insights_generations_total{outcome=~"invalid|timeout|error|circuit_open"}[30m]))
+            / clamp_min(sum(rate(insights_generations_total{outcome!~"no_signal|no_llm|rate_limited"}[30m])), 1e-9) > 0.2
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of AI insight generations fall back to the template"
+          runbook: docs/RUNBOOK.md#insights-fallback
