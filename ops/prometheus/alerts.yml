@@ -1,4 +1,5 @@
 # Alert rules, reviewed like code. Grafana shows them under Alerting (data-source managed).
+# Prometheus sends firing alerts to Alertmanager, which routes them by severity: page -> on-call, ticket -> team channel.
 groups:
   - name: call-analytics
     rules:
@@ -17,6 +18,24 @@ groups:
         annotations:
           summary: "p95 time from call event to ingest is {{ $value | humanizeDuration }} (target < 10 s)"
           runbook: docs/RUNBOOK.md#ingest-lag
+
+      - alert: IngestRejectsHigh
+        expr: |
+          sum(rate(ingest_events_total{outcome="rejected"}[10m]))
+            / clamp_min(sum(rate(ingest_events_total[10m])), 1e-9) > 0.01
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of ingested events are rejected (unknown campaign, identity mismatch, invalid transition)"
+          runbook: docs/RUNBOOK.md#ingest-rejects
+
+      - alert: IngestRateLimited
+        expr: sum(rate(ingest_rate_limited_events_total[10m])) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "An account has been over its ingest rate limit for 15 minutes ({{ $value | humanize }} events/s refused)"
+          runbook: docs/RUNBOOK.md#ingest-rate-limited
 
       - alert: RollupDrift
         expr: max(rollup_drift_buckets) > 0

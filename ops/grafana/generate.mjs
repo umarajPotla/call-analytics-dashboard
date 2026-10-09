@@ -184,13 +184,16 @@ const health = dashboard(
     row("Live feed and ingest", 13),
     series(
       "Ingested events by outcome",
-      [target("sum by (outcome) (rate(ingest_events_total[1m]))", "{{outcome}}")],
+      [
+        target("sum by (outcome) (rate(ingest_events_total[1m]))", "{{outcome}}"),
+        target("sum(rate(ingest_rate_limited_events_total[1m]))", "rate limited (429)"),
+      ],
       {
         unit: "ops",
         stack: true,
         gridPos: at(0, 14, 8, 8),
         description:
-          "applied = changed a call · duplicate = same event id again · noop = older than current state · rejected = invalid",
+          "applied = changed a call · duplicate = same event id again · noop = older than current state · rejected = invalid · rate limited = refused with 429, the sender retries",
       },
     ),
     series(

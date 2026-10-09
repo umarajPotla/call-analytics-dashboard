@@ -53,7 +53,15 @@ services:
     volumes:
       - ./ops/prometheus:/etc/prometheus:ro
     ports: ["9090:9090"]
-    depends_on: [api]
+    depends_on: [api, alertmanager]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: [observability]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./ops/alertmanager:/etc/alertmanager:ro
+    ports: ["9093:9093"]
 
   grafana:
     image: grafana/grafana:12.4.0

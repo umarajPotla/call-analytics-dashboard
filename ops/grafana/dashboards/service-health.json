@@ -532,7 +532,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Ingested events by outcome",
-      "description": "applied = changed a call · duplicate = same event id again · noop = older than current state · rejected = invalid",
+      "description": "applied = changed a call · duplicate = same event id again · noop = older than current state · rejected = invalid · rate limited = refused with 429, the sender retries",
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -552,6 +552,16 @@
           "expr": "sum by (outcome) (rate(ingest_events_total[1m]))",
           "legendFormat": "{{outcome}}",
           "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum(rate(ingest_rate_limited_events_total[1m]))",
+          "legendFormat": "rate limited (429)",
+          "refId": "B",
           "range": true
         }
       ],

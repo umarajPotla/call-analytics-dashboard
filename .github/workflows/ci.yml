@@ -66,15 +66,23 @@ jobs:
       - name: Playwright smoke test
         run: pnpm --filter @calls/web e2e
         env: { E2E_BASE_URL: "http://localhost:8080" }
-      - name: Observability stack (alert rules load, Prometheus scrapes, Grafana provisions)
+      - name: Alert rules unit tests and alert routing config
         run: |
-          docker compose --profile observability up --detach prometheus grafana
+          docker run --rm --entrypoint promtool -v "$PWD/ops/prometheus:/etc/prometheus:ro" -w /etc/prometheus \
+            prom/prometheus:v3.13.0 test rules alerts.test.yml
+          docker run --rm --entrypoint amtool -v "$PWD/ops/alertmanager:/etc/alertmanager:ro" \
+            prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
+      - name: Observability stack (alert rules load, Prometheus scrapes, alerts route to Alertmanager, Grafana provisions)
+        run: |
+          docker compose --profile observability up --detach prometheus alertmanager grafana
           retry() { for i in $(seq 1 30); do if eval "$1"; then return 0; fi; sleep 3; done; echo "FAILED: $1"; return 1; }
-          retry "curl -sf localhost:9090/api/v1/rules | jq -e '[.data.groups[].rules[]] | length == 6' >/dev/null"
+          retry "curl -sf localhost:9090/api/v1/rules | jq -e '[.data.groups[].rules[]] | length == 8' >/dev/null"
           retry "curl -sf 'localhost:9090/api/v1/query?query=up%7Bjob%3D%22api%22%7D' | jq -e '.data.result[0].value[1] == \"1\"' >/dev/null"
+          retry "curl -sf localhost:9090/api/v1/alertmanagers | jq -e '.data.activeAlertmanagers | length == 1' >/dev/null"
+          retry "curl -sf localhost:9093/-/ready >/dev/null"
           retry "curl -sf 'localhost:3000/api/search?tag=call-analytics' | jq -e 'length == 4' >/dev/null"
           retry "curl -sf -u admin:admin localhost:3000/api/datasources | jq -e 'length == 2' >/dev/null"
-          echo "Prometheus: 6 alert rules, API scraped. Grafana: 4 dashboards, 2 data sources."
+          echo "Prometheus: 8 alert rules, API scraped, Alertmanager connected. Grafana: 4 dashboards, 2 data sources."
       - name: Screenshots
         run: pnpm --filter @calls/web exec node e2e/screenshots.mjs screenshots
       - uses: actions/upload-artifact@v6
