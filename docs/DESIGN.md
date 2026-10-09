@@ -370,6 +370,7 @@ There was no kickoff call, so these are stated as assumptions (§3) and are the 
 | 2026-10-08 | Prometheus client instead of the OpenTelemetry SDK (D13) | Same dashboards with less to run; tracing is the next step |
 | 2026-10-08 | Simulator history is **bulk-loaded**; live traffic still goes through the ingest API (D11) | ~100k calls per cold start through per-event transactions on a free remote database is too slow |
 | 2026-10-08 | Simulator runs **in-process** (diagram 1 said "container locally"); a standalone CLI also exists | One service on the free host; nothing to orchestrate locally |
+| 2026-10-08 | Diagram 1 names the insight tables as built: `insight_generations`, `insight_scopes`, `insight_feedback` | It still showed `insight_cache`, which migration 003 replaced |
 | 2026-10-08 | KPI tiles and conversion rates **ignore the outcome filter**, and say so in the UI and API (`ignoredFilters`) | "Conversion rate of missed calls only" is meaningless; silently applying the filter would mislead |
 | 2026-10-08 | Ingest returns **200 with an outcome per event** instead of 202 | The sender learns synchronously which events were duplicates, no-ops or rejected |
 | 2026-10-08 | Runs behind Neon's transaction-mode pooler: no session settings; direct URL for migrations and `LISTEN` (D14) | Poolers reject startup options and don't keep session state |
