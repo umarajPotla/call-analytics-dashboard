@@ -14,7 +14,8 @@
     "simulate": "tsx src/simulator/cli.ts",
     "eval": "tsx src/insights/eval/run.ts",
     "rebuild-rollups": "tsx --env-file-if-exists=../../.env src/db/rebuild-rollups-cli.ts",
-    "bench": "tsx scripts/bench.ts"
+    "bench": "tsx scripts/bench.ts",
+    "bench:live": "tsx scripts/live-bench.ts"
   },
   "dependencies": {
     "@calls/shared": "workspace:*",
