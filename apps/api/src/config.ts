@@ -22,6 +22,9 @@ const Env = z.object({
   SIM_REORDER_RATE: z.coerce.number().min(0).max(0.5).default(0.01),
   SIM_INGEST_URL: z.string().optional(),
   DEV_TOOLS: bool,
+  // Per-account ingest limit in events/s, with a burst allowance; 0 turns it off.
+  INGEST_RATE_PER_ACCOUNT: z.coerce.number().min(0).default(200),
+  INGEST_BURST_PER_ACCOUNT: z.coerce.number().int().min(0).default(2000),
   EVENT_RETENTION_DAYS: z.coerce.number().int().min(1).default(4),
   DATA_RETENTION_DAYS: z.coerce.number().int().min(8).default(35),
   LLM_BASE_URL: z.string().optional(),

@@ -16,6 +16,7 @@ import { AccountDirectory } from "./http/accounts";
 import { registerProblemHandler } from "./http/problem";
 import type { CampaignDirectory } from "./ingest/campaignDirectory";
 import type { IngestService } from "./ingest/ingestService";
+import type { AccountRateLimiter } from "./ingest/rateLimiter";
 import type { InsightsService } from "./insights/service";
 import { createLogger } from "./observability/logger";
 import type { Metrics } from "./observability/metrics";
@@ -33,6 +34,8 @@ export type AppDeps = {
   db: Db;
   campaigns: CampaignDirectory;
   ingest: IngestService;
+  /** Per-account ingest rate limit; omitted = unlimited (tests). */
+  ingestLimiter?: AccountRateLimiter;
   hub: SseHub;
   metrics: Metrics;
   insights?: InsightsService;
@@ -88,7 +91,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         calls: callsRepo,
       });
       await api.register(streamRoutes, { accounts, calls: callsRepo, hub: deps.hub });
-      await api.register(ingestRoutes, { ingest: deps.ingest });
+      await api.register(ingestRoutes, {
+        ingest: deps.ingest,
+        limiter: deps.ingestLimiter,
+        onRateLimited: (n) => deps.metrics.ingestRateLimited.inc(n),
+      });
       await api.register(metaRoutes, {
         meta: {
           version: process.env.npm_package_version ?? "1.0.0",

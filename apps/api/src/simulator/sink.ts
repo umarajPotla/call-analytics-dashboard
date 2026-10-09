@@ -4,6 +4,17 @@ export interface EventSink {
   send(events: CallEventInput[]): Promise<void>;
 }
 
+/** A send that stopped part-way: the first `sent` events were accepted; retry the rest after `retryAfterMs`. */
+export class SendError extends Error {
+  constructor(
+    message: string,
+    readonly sent: number,
+    readonly retryAfterMs: number,
+  ) {
+    super(message);
+  }
+}
+
 /** Posts events to the public ingest endpoint, exactly as a telephony integration would. */
 export class HttpSink implements EventSink {
   constructor(private readonly baseUrl: string) {}
@@ -16,7 +27,15 @@ export class HttpSink implements EventSink {
         body: JSON.stringify({ events: events.slice(i, i + 200) }),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) throw new Error(`ingest responded ${res.status}`);
+      if (!res.ok) {
+        // A well-behaved client: honour Retry-After (429, 503), otherwise back off a few seconds.
+        const retryAfterSec = Number(res.headers.get("retry-after"));
+        throw new SendError(
+          `ingest responded ${res.status}`,
+          i,
+          Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 5_000,
+        );
+      }
     }
   }
 }

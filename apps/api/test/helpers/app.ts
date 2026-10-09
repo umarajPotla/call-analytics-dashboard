@@ -3,6 +3,7 @@ import { buildApp } from "../../src/app";
 import type { Db } from "../../src/db/pool";
 import { CampaignDirectory } from "../../src/ingest/campaignDirectory";
 import { IngestService } from "../../src/ingest/ingestService";
+import type { AccountRateLimiter } from "../../src/ingest/rateLimiter";
 import { InsightGenerator } from "../../src/insights/generator";
 import { InsightsService } from "../../src/insights/service";
 import { Metrics } from "../../src/observability/metrics";
@@ -17,7 +18,7 @@ export type TestApp = {
 };
 
 /** The real app (same buildApp as production) over a test database. Insights use the template (no model). */
-export async function testApp(db: Db): Promise<TestApp> {
+export async function testApp(db: Db, opts: { ingestLimiter?: AccountRateLimiter } = {}): Promise<TestApp> {
   const campaigns = new CampaignDirectory(db);
   await campaigns.load();
   const metrics = new Metrics();
@@ -29,6 +30,7 @@ export async function testApp(db: Db): Promise<TestApp> {
     db,
     campaigns,
     ingest,
+    ingestLimiter: opts.ingestLimiter,
     hub,
     metrics,
     insights,

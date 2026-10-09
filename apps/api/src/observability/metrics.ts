@@ -27,6 +27,11 @@ export class Metrics {
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 300, 3600],
     registers: [this.registry],
   });
+  readonly ingestRateLimited = new client.Counter({
+    name: "ingest_rate_limited_events_total",
+    help: "Events refused with 429 because an account exceeded its ingest rate (the sender retries them)",
+    registers: [this.registry],
+  });
   readonly sseClients = new client.Gauge({
     name: "sse_connected_clients",
     help: "Open live-feed connections",

@@ -6,6 +6,7 @@ import { createPool, type Db } from "./db/pool";
 import { seedReferenceData } from "./db/seed";
 import { CampaignDirectory } from "./ingest/campaignDirectory";
 import { IngestService } from "./ingest/ingestService";
+import { AccountRateLimiter } from "./ingest/rateLimiter";
 import { CircuitBreaker, LlmGateway, OpenAICompatibleProvider } from "./insights/gateway";
 import { InsightGenerator, loadPrompt } from "./insights/generator";
 import { InsightsService } from "./insights/service";
@@ -78,6 +79,7 @@ const app = await buildApp({
   db,
   campaigns,
   ingest,
+  ingestLimiter: new AccountRateLimiter(config.INGEST_RATE_PER_ACCOUNT, config.INGEST_BURST_PER_ACCOUNT),
   hub,
   metrics,
   insights,

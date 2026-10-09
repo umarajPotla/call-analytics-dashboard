@@ -4,7 +4,7 @@ import type { AccountProfile } from "../catalog";
 import type { Db } from "../db/pool";
 import { bulkLoadHistory } from "./backfill";
 import { generateMinute, LATE_CONVERSION_MAX_MS, type SimCall, type SimEvent } from "./model";
-import type { EventSink } from "./sink";
+import { type EventSink, SendError } from "./sink";
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -176,8 +176,11 @@ export class SimulatorRunner {
     try {
       await this.sink.send(due);
     } catch (err) {
-      // Events are idempotent, so retrying the whole batch later is safe.
-      this.enqueue(due.map((event) => ({ at: now + 5_000, event })));
+      // Events are idempotent, so resending is always safe. Resend only what wasn't accepted (so retries don't
+      // spend the account's rate limit on duplicates), after Retry-After when the API gave one.
+      const sent = err instanceof SendError ? err.sent : 0;
+      const delay = err instanceof SendError ? err.retryAfterMs : 5_000;
+      this.enqueue(due.slice(sent).map((event) => ({ at: now + delay, event })));
       throw err;
     }
   }

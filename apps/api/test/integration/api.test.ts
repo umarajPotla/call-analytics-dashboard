@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CATALOG } from "../../src/catalog";
 import type { Db } from "../../src/db/pool";
 import { rebuildRollups } from "../../src/db/rollups";
+import { AccountRateLimiter } from "../../src/ingest/rateLimiter";
 import { PROMPT_VERSION } from "../../src/insights/generator";
 import { bulkLoadHistory } from "../../src/simulator/backfill";
 import { type TestApp, testApp } from "../helpers/app";
@@ -219,6 +220,39 @@ describe("ingest API", () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().errors.length).toBeGreaterThan(0);
+  });
+  it("refuses a whole batch over an account's rate limit with 429 and Retry-After, applying nothing", async () => {
+    const limited = await testApp(db, { ingestLimiter: new AccountRateLimiter(1, 500) });
+    try {
+      const post = (events: ReturnType<typeof ev>[]) =>
+        limited.app.inject({ method: "POST", url: "/api/v1/call-events", payload: { events } });
+      const first = newCall({ startedAt: "2026-10-01T17:00:00.000Z" });
+      const ok = await post([ev(first, "call.started", "2026-10-01T17:00:00Z")]);
+      expect(ok.statusCode).toBe(200);
+
+      // 500 more events need 500 tokens, but only 499 are left (refilling at 1/s).
+      const flood = Array.from({ length: 250 }, () => newCall({ startedAt: "2026-10-01T17:01:00.000Z" }));
+      const events = flood.flatMap((c) => [
+        ev(c, "call.started", "2026-10-01T17:01:00Z"),
+        ev(c, "call.missed", "2026-10-01T17:01:30Z"),
+      ]);
+      const refused = await post(events);
+      expect(refused.statusCode).toBe(429);
+      expect(refused.headers["content-type"]).toContain("application/problem+json");
+      expect(Number(refused.headers["retry-after"])).toBeGreaterThanOrEqual(1);
+      expect(refused.json()).toMatchObject({ status: 429, title: "Too many requests" });
+      const { rows } = await db.query("SELECT count(*)::int AS n FROM calls WHERE id = ANY($1)", [
+        flood.map((c) => c.id),
+      ]);
+      expect(rows[0].n).toBe(0);
+      expect((await limited.app.inject("/metrics")).body).toMatch(/ingest_rate_limited_events_total 500/);
+
+      // Another account is not affected by the first one's flood.
+      const other = newCall({ accountId: NORTHWIND.id, campaignId: NORTHWIND.campaigns[0]!.id });
+      expect((await post([ev(other, "call.started", other.startedAt)])).statusCode).toBe(200);
+    } finally {
+      await limited.close();
+    }
   });
 });
 
